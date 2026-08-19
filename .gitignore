@@ -1,0 +1,50 @@
+# Datasets and local databases
+*.csv
+*.tsv
+*.xlsx
+*.xls
+*.parquet
+*.jsonl
+*.db
+*.sqlite
+*.sqlite3
+*.pdf
+
+# Dataset directories
+Data/
+data/
+All FFS Claims/
+Prescribers/
+beneficiary_split/
+cms_csv/
+dme_splits/
+dq_output/
+expected_time/
+files/
+hha_splits/
+hospice_splits/
+outpatient_batches/
+snf_split/
+split_carrier/
+split_inpatient/
+split_pharmacy/
+split_pharmacy_dlsum/
+split_pharmacy_hlsum/
+
+# Generated analysis outputs
+evidence_output.json
+root_cause_output.json
+*_summary.md
+*_recommendation_*.md
+
+# Python and frontend build caches
+__pycache__/
+*.py[cod]
+*.tsbuildinfo
+node_modules/
+frontend/node_modules/
+.next/
+frontend/.next/
+.env*
+.DS_Store
+
