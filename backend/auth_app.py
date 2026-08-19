@@ -23,7 +23,8 @@ CORS(app)
 # ============================================================
 
 BASE_DIR = Path(__file__).resolve().parent
-DB_PATH = BASE_DIR / "users.db"
+PARENT_DIR = BASE_DIR.parent
+DB_PATH = (PARENT_DIR / "users.db") if (PARENT_DIR / "users.db").exists() else (BASE_DIR / "users.db")
 
 
 # ============================================================

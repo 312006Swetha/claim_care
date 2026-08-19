@@ -1,0 +1,38 @@
+{
+  "primary_root_cause": "Total day supply differs substantially from the expected relationship with 30-day fills.",
+  "primary_recommendation": "Review fill and day-supply calculation logic and investigate records with unusually large deviations.",
+  "findings_analyzed": 3,
+  "actionable_findings": 1,
+  "root_cause_findings": [
+    {
+      "dimension": "consistency",
+      "field": "Tot_Day_Suply vs Tot_30day_Fills*30",
+      "rule": "soft_ratio_check_30pct_tolerance",
+      "severity": "warning",
+      "affected_rows": 150,
+      "affected_pct": 15.0,
+      "root_cause": "Total day supply differs substantially from the expected relationship with 30-day fills.",
+      "recommendation": "Review fill and day-supply calculation logic and investigate records with unusually large deviations."
+    },
+    {
+      "dimension": "referential_integrity",
+      "field": "Brnd_Name+Gnrc_Name",
+      "rule": "informational_DLSum_category_coverage (NOT a pass/fail check \u2014 DLSum is a category subset, not a full drug master)",
+      "severity": "info",
+      "affected_rows": 150,
+      "affected_pct": 15.0,
+      "root_cause": "Referential_integrity issue detected in Brnd_Name+Gnrc_Name based on rule 'informational_DLSum_category_coverage (NOT a pass/fail check \u2014 DLSum is a category subset, not a full drug master)'.",
+      "recommendation": "Review the source data and processing logic associated with Brnd_Name+Gnrc_Name, then validate the affected records."
+    },
+    {
+      "dimension": "concordance",
+      "field": "HLSum full-year reconciliation",
+      "rule": "not_applicable_to_partial_batch",
+      "severity": "info",
+      "affected_rows": 0,
+      "affected_pct": 0.0,
+      "root_cause": "Full-year concordance cannot be evaluated because the current input is only a partial batch.",
+      "recommendation": "Run the annual concordance check when the complete provider-drug dataset is available."
+    }
+  ]
+}

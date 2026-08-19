@@ -11,26 +11,50 @@ CORS(app)
 # DATABASE LOCATION
 # ============================================================
 
-BASE_DIR = r"C:\Users\sweth\OneDrive\Pictures\Desktop\Congnizant"
+def resolve_data_dir():
+    env_dir = os.environ.get("CLAIMCARE_DATA_DIR")
+    if env_dir and os.path.isdir(env_dir):
+        return env_dir
+    
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    parent_dir = os.path.abspath(os.path.join(current_dir, ".."))
+    
+    for candidate in [
+        parent_dir,
+        os.path.join(parent_dir, "data"),
+        os.path.join(parent_dir, "Data"),
+        current_dir,
+        os.path.join(current_dir, "data"),
+    ]:
+        if os.path.exists(os.path.join(candidate, "claim_sentinel.db")) or os.path.exists(os.path.join(candidate, "anomalies.db")):
+            return candidate
+    
+    return parent_dir
 
-ANOMALIES_DB = os.path.join(BASE_DIR, "anomalies.db")
-CLAIMS_SLA_DB = os.path.join(BASE_DIR, "claims_sla_behavior.db")
-PHARMACY_SLA_DB = os.path.join(BASE_DIR, "pharmacy_sla_behavior.db")
-DRUG_VOLUME_DB = os.path.join(
-    BASE_DIR, "volume_pharmacy(3).db"
-)
-if not os.path.exists(DRUG_VOLUME_DB):
-    DRUG_VOLUME_DB = os.path.join(
-        BASE_DIR, "volume_pharmacy.db"
-    )
-VOLUME_DB = os.path.join(BASE_DIR, "voulme.db")
-AUTH_VOLUME_DB = os.path.join(BASE_DIR, "auth_volume.db")
-AUTH_DAGSTER_DB = os.path.join(BASE_DIR, "auth_dagster.db")
-AUTH_SLA_DB = os.path.join(BASE_DIR, "auth_sla.db")
-FINAL_SLA_RISK_DB = os.path.join(BASE_DIR, "final_sla_risk.db")
-PHARMACY_DQ_DB = os.path.join(BASE_DIR, "pharmacy_database.db")
-DAGSTER_DQ_DB = os.path.join(BASE_DIR, "claim_dagster.db")
-CLAIM_SENTINEL_DB = os.path.join(BASE_DIR, "claim_sentinel.db")
+BASE_DIR = resolve_data_dir()
+
+def find_db_path(*names):
+    for name in names:
+        candidate = os.path.join(BASE_DIR, name)
+        if os.path.exists(candidate):
+            return candidate
+        candidate_data = os.path.join(BASE_DIR, "Data", name)
+        if os.path.exists(candidate_data):
+            return candidate_data
+    return os.path.join(BASE_DIR, names[-1])
+
+ANOMALIES_DB = find_db_path("anomalies.db")
+CLAIMS_SLA_DB = find_db_path("claims_sla_behavior.db")
+PHARMACY_SLA_DB = find_db_path("pharmacy_sla_behavior.db")
+DRUG_VOLUME_DB = find_db_path("volume_pharmacy(3).db", "volume_pharmacy.db")
+VOLUME_DB = find_db_path("voulme.db", "volume.db")
+AUTH_VOLUME_DB = find_db_path("auth_volume.db")
+AUTH_DAGSTER_DB = find_db_path("auth_dagster.db")
+AUTH_SLA_DB = find_db_path("auth_sla.db")
+FINAL_SLA_RISK_DB = find_db_path("final_sla_risk.db")
+PHARMACY_DQ_DB = find_db_path("pharmacy_database.db")
+DAGSTER_DQ_DB = find_db_path("claim_dagster.db")
+CLAIM_SENTINEL_DB = find_db_path("claim_sentinel.db")
 
 CLAIM_SENTINEL_DATASETS = {
     "authorization_dataset",
