@@ -1270,3 +1270,96 @@
     padding: 8px 10px;
   }
 }
+
+/* ============================================================
+   UNIVERSAL BACK BUTTON STYLES
+   ============================================================ */
+
+.topbar-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: rgba(142, 238, 255, 0.12);
+  border: 1px solid rgba(142, 238, 255, 0.35);
+  color: var(--foreground);
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  margin-right: 4px;
+}
+
+.topbar-back-btn:hover {
+  background: rgba(142, 238, 255, 0.24);
+  border-color: var(--aqua);
+  color: #ffffff;
+  transform: translateX(-2px);
+  box-shadow: 0 0 16px rgba(142, 238, 255, 0.25);
+}
+
+.topbar-back-btn svg {
+  transition: transform 0.2s ease;
+}
+
+.topbar-back-btn:hover svg {
+  transform: translateX(-3px);
+}
+
+.subpage-back-banner {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  background: rgba(18, 43, 108, 0.45);
+  border: 1px solid var(--line);
+  color: var(--aqua);
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  backdrop-filter: blur(12px);
+}
+
+.subpage-back-banner:hover {
+  background: rgba(142, 238, 255, 0.18);
+  border-color: var(--aqua);
+  color: #ffffff;
+  transform: translateX(-3px);
+  box-shadow: 0 4px 18px rgba(3, 18, 74, 0.4);
+}
+
+.subpage-back-banner svg {
+  transition: transform 0.2s ease;
+}
+
+.subpage-back-banner:hover svg {
+  transform: translateX(-3px);
+}
+
+.heading-actions .back-btn,
+.heading-actions .small-button:has(svg) {
+  transition: all 0.2s ease;
+  font-weight: 700;
+}
+
+.heading-actions .back-btn:hover,
+.heading-actions .small-button:has(svg):hover {
+  border-color: var(--aqua);
+  background: rgba(142, 238, 255, 0.18);
+  transform: translateX(-2px);
+  box-shadow: 0 0 14px rgba(142, 238, 255, 0.2);
+}
+
+.heading-actions .back-btn svg,
+.heading-actions .small-button svg {
+  transition: transform 0.2s ease;
+}
+
+.heading-actions .back-btn:hover svg,
+.heading-actions .small-button:hover svg {
+  transform: translateX(-2px);
+}
+

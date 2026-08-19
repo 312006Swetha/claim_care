@@ -216,8 +216,13 @@ export default function ClaimCareApp() {
     }
   }, [])
 
+  const [viewHistory, setViewHistory] = useState<View[]>([])
+
   const go = (next: View) => {
-    setView(next)
+    if (next !== view) {
+      setViewHistory(prev => [...prev, view])
+      setView(next)
+    }
     setMobileNav(false)
 
     if (pathname !== '/') {
@@ -226,6 +231,73 @@ export default function ClaimCareApp() {
     }
 
     window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  const handleBack = () => {
+    // 1. If on dynamic claim detail route (/claims/[claimId])
+    if (pathname.startsWith('/claims/')) {
+      if (typeof window !== 'undefined' && window.history.length > 1) {
+        router.back()
+      } else {
+        router.push('/claims')
+      }
+      return
+    }
+
+    // 2. If on dynamic provider detail route (/providers/[npi])
+    if (pathname.startsWith('/providers/')) {
+      if (typeof window !== 'undefined' && window.history.length > 1) {
+        router.back()
+      } else {
+        router.push('/providers')
+      }
+      return
+    }
+
+    // 3. If on top-level subpages (/claims, /drugs, /providers, /data)
+    if (
+      pathname === '/claims' ||
+      pathname === '/drugs' ||
+      pathname === '/providers' ||
+      pathname === '/data'
+    ) {
+      if (typeof window !== 'undefined' && window.history.length > 1) {
+        router.back()
+      } else {
+        router.push('/')
+      }
+      return
+    }
+
+    // 4. If in dashboard and there are previous views in history
+    if (viewHistory.length > 0) {
+      const prevView = viewHistory[viewHistory.length - 1]
+      setViewHistory(prev => prev.slice(0, -1))
+      setView(prevView)
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+      return
+    }
+
+    // 5. If in login view
+    if (view === 'login') {
+      setView('landing')
+      return
+    }
+
+    // 6. If in a dashboard subview (quality, sla, anomalies, etc.)
+    if (view !== 'overview' && view !== 'landing') {
+      setView('overview')
+      return
+    }
+
+    // 7. If in overview and browser has history
+    if (typeof window !== 'undefined' && window.history.length > 1) {
+      router.back()
+      return
+    }
+
+    // Fallback: go to landing
+    setView('landing')
   }
 
   const displayName =
@@ -238,7 +310,13 @@ export default function ClaimCareApp() {
     routedPage === 'dashboard' &&
     view === 'landing'
   ) {
-    return <Landing go={go} />
+    return (
+      <Landing
+        go={go}
+        handleBack={handleBack}
+        hasHistory={viewHistory.length > 0}
+      />
+    )
   }
 
   if (
@@ -249,6 +327,7 @@ export default function ClaimCareApp() {
       <Login
         go={go}
         onAuth={user => setCurrentUser(user)}
+        handleBack={handleBack}
       />
     )
   }
@@ -311,24 +390,49 @@ export default function ClaimCareApp() {
       <Background />
 
       <header className="topbar">
-        <button
-          className="mobile-menu"
-          onClick={() => setMobileNav(!mobileNav)}
-          aria-label="Open navigation"
-        >
-          <Menu />
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <button
+            className="mobile-menu"
+            onClick={() => setMobileNav(!mobileNav)}
+            aria-label="Open navigation"
+          >
+            <Menu />
+          </button>
 
-        <button
-          className="logo-button"
-          onClick={() =>
-            routedPage === 'dashboard'
-              ? go('overview')
-              : router.push('/')
-          }
-        >
-          <Logo />
-        </button>
+          <button
+            className="topbar-back-btn"
+            onClick={handleBack}
+            aria-label="Go back to previous page"
+            title="Go back to previous page"
+          >
+            <ArrowLeft size={16} />
+            <span>Back</span>
+          </button>
+
+          <button
+            className="logo-button"
+            onClick={() =>
+              routedPage === 'dashboard'
+                ? go('overview')
+                : router.push('/')
+            }
+          >
+            <Logo />
+          </button>
+        </div>
+
+        <nav className={mobileNav ? 'mobile-open' : ''}>
+          {nav.map(([key, label, Icon]) => (
+            <button
+              key={key}
+              className={view === key && routedPage === 'dashboard' ? 'active' : ''}
+              onClick={() => go(key as View)}
+            >
+              <Icon size={14} />
+              <span>{label}</span>
+            </button>
+          ))}
+        </nav>
 
         <div className="top-actions">
           <button className="icon-button">
@@ -433,30 +537,22 @@ export default function ClaimCareApp() {
           </div>
 
           <div className="heading-actions">
-            {routedPage === 'dashboard' ? (
-              <>
-                <button
-                  className="small-button"
-                  onClick={() => router.back()}
-                >
-                  <ArrowLeft size={16} />
-                  Back
-                </button>
-                <button
-                  className="primary-button"
-                  onClick={() => router.push('/data?dataset=carrier')}
-                >
-                  <Database size={16} />
-                  View data
-                </button>
-              </>
-            ) : (
+            <button
+              className="small-button back-btn"
+              onClick={handleBack}
+              title="Go back to previous page"
+              aria-label="Go back to previous page"
+            >
+              <ArrowLeft size={16} />
+              Back
+            </button>
+            {routedPage === 'dashboard' && (
               <button
                 className="primary-button"
-                onClick={() => router.back()}
+                onClick={() => router.push('/data?dataset=carrier')}
               >
-                <ArrowLeft size={16} />
-                Back
+                <Database size={16} />
+                View data
               </button>
             )}
           </div>
@@ -484,25 +580,31 @@ export default function ClaimCareApp() {
         )}
         {routedPage === 'dashboard' && view === 'batch' && <Batch />}
         {routedPage === 'dashboard' && view === 'settings' && <Settings />}
-        {routedPage === 'data' && <DataPage router={router} />}
-        {routedPage === 'claims' && <ClaimsPage router={router} />}
+        {routedPage === 'data' && (
+          <DataPage router={router} handleBack={handleBack} />
+        )}
+        {routedPage === 'claims' && (
+          <ClaimsPage router={router} handleBack={handleBack} />
+        )}
         {routedPage === 'claim-detail' && (
           <ClaimDetailPage
             claimId={routeClaimId}
             router={router}
+            handleBack={handleBack}
           />
         )}
         {routedPage === 'drugs' && (
-          <DrugsPage router={router} />
+          <DrugsPage router={router} handleBack={handleBack} />
         )}
         {routedPage === 'providers' && (
-          <ProvidersPage router={router} />
+          <ProvidersPage router={router} handleBack={handleBack} />
         )}
         {routedPage === 'provider-detail' && (
           <ProviderDetailPage
             npi={routeNpi}
             router={router}
             initialAlertLevel={routeAlertLevel}
+            handleBack={handleBack}
           />
         )}
       </main>
@@ -528,13 +630,34 @@ function Background() {
   )
 }
 
-function Landing({ go }: { go: (v: View) => void }) {
+function Landing({
+  go,
+  handleBack,
+  hasHistory,
+}: {
+  go: (v: View) => void
+  handleBack?: () => void
+  hasHistory?: boolean
+}) {
   return (
     <div className="landing">
       <Background />
 
       <header className="landing-nav">
-        <Logo />
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          {hasHistory && handleBack && (
+            <button
+              className="topbar-back-btn"
+              onClick={handleBack}
+              title="Back"
+              aria-label="Back"
+            >
+              <ArrowLeft size={16} />
+              <span>Back</span>
+            </button>
+          )}
+          <Logo />
+        </div>
 
         <div className="landing-links">
           <a href="#platform">Overview</a>
@@ -712,9 +835,11 @@ function Landing({ go }: { go: (v: View) => void }) {
 function Login({
   go,
   onAuth,
+  handleBack,
 }: {
   go: (v: View) => void
   onAuth: (user: AuthUser) => void
+  handleBack?: () => void
 }) {
   const [mode, setMode] = useState<'signin' | 'signup'>('signin')
 
@@ -849,9 +974,10 @@ function Login({
 
         <button
           className="login-link"
-          onClick={() => go('landing')}
+          onClick={() => (handleBack ? handleBack() : go('landing'))}
+          aria-label="Back"
         >
-          <ArrowLeft size={15} />
+          <ArrowLeft size={16} />
           Back to site
         </button>
 
@@ -859,6 +985,16 @@ function Login({
 
 
       <Glass className="login-card">
+
+        <button
+          className="subpage-back-banner"
+          onClick={() => (handleBack ? handleBack() : go('landing'))}
+          style={{ marginBottom: 18 }}
+          aria-label="Back"
+        >
+          <ArrowLeft size={14} />
+          Back
+        </button>
 
         {/* ==================================================
             TITLE
@@ -4955,8 +5091,10 @@ function DetailFieldGrid({
 
 function DataPage({
   router,
+  handleBack,
 }: {
   router: RouterLike
+  handleBack?: () => void
 }) {
   const searchParams = useSearchParams()
   const dataset = searchParams.get('dataset') || 'carrier'
@@ -5011,6 +5149,16 @@ function DataPage({
 
   return (
     <>
+      <button
+        className="subpage-back-banner"
+        onClick={() => (handleBack ? handleBack() : router.push('/'))}
+        style={{ marginBottom: 14 }}
+        aria-label="Back to Dashboard"
+      >
+        <ArrowLeft size={16} />
+        Back to Dashboard
+      </button>
+
       <Glass className="filter-card">
         <div className="card-title">
           <div>
@@ -5101,8 +5249,10 @@ function DataPage({
 
 function ClaimsPage({
   router,
+  handleBack,
 }: {
   router: RouterLike
+  handleBack?: () => void
 }) {
   const searchParams = useSearchParams()
   const [data, setData] =
@@ -5210,6 +5360,16 @@ function ClaimsPage({
 
   return (
     <>
+      <button
+        className="subpage-back-banner"
+        onClick={() => (handleBack ? handleBack() : router.push('/'))}
+        style={{ marginBottom: 14 }}
+        aria-label="Back to Dashboard"
+      >
+        <ArrowLeft size={16} />
+        Back to Dashboard
+      </button>
+
       <Glass className="table-card">
         <div className="card-title">
           <div>
@@ -5469,9 +5629,11 @@ function ClaimsPage({
 function ClaimDetailPage({
   claimId,
   router,
+  handleBack,
 }: {
   claimId: string
   router: RouterLike
+  handleBack?: () => void
 }) {
   const [data, setData] =
     useState<ClaimDetailResponse | null>(null)
@@ -5517,17 +5679,39 @@ function ClaimDetailPage({
 
   if (loading) {
     return (
-      <Glass className="table-card">
-        <p>Loading claim detail…</p>
-      </Glass>
+      <>
+        <button
+          className="subpage-back-banner"
+          onClick={() => (handleBack ? handleBack() : router.push('/claims'))}
+          style={{ marginBottom: 14 }}
+          aria-label="Back to All Claims"
+        >
+          <ArrowLeft size={16} />
+          Back to All Claims
+        </button>
+        <Glass className="table-card">
+          <p>Loading claim detail…</p>
+        </Glass>
+      </>
     )
   }
 
   if (error || !data) {
     return (
-      <Glass className="table-card">
-        <p>{error || 'Claim not found.'}</p>
-      </Glass>
+      <>
+        <button
+          className="subpage-back-banner"
+          onClick={() => (handleBack ? handleBack() : router.push('/claims'))}
+          style={{ marginBottom: 14 }}
+          aria-label="Back to All Claims"
+        >
+          <ArrowLeft size={16} />
+          Back to All Claims
+        </button>
+        <Glass className="table-card">
+          <p>{error || 'Claim not found.'}</p>
+        </Glass>
+      </>
     )
   }
 
@@ -5535,6 +5719,16 @@ function ClaimDetailPage({
 
   return (
     <>
+      <button
+        className="subpage-back-banner"
+        onClick={() => (handleBack ? handleBack() : router.push('/claims'))}
+        style={{ marginBottom: 14 }}
+        aria-label="Back to All Claims"
+      >
+        <ArrowLeft size={16} />
+        Back to All Claims
+      </button>
+
       <SummaryStrip
         items={[
           {
@@ -5600,8 +5794,10 @@ function ClaimDetailPage({
 
 function DrugsPage({
   router,
+  handleBack,
 }: {
   router: RouterLike
+  handleBack?: () => void
 }) {
   const searchParams = useSearchParams()
   const [data, setData] =
@@ -5739,30 +5935,26 @@ function DrugsPage({
   }
 
   const activeDataset =
-    data?.dataset || dataset
+    dataset === 'provider-impact'
+      ? 'provider-impact'
+      : dataset === 'overall-trend'
+        ? 'overall-trend'
+        : 'drug-volume'
 
   const heading =
     activeDataset === 'provider-impact'
       ? 'Affected Providers'
       : activeDataset === 'overall-trend'
-        ? calendarYear
-          ? `Overall Risk Trend for ${calendarYear}`
-          : 'Overall Risk Trend'
-        : riskBucket === 'high_severity'
-          ? 'High Severity Drugs'
-          : riskBucket === 'active_alerts'
-            ? 'Active Drug Alerts'
-            : riskLevel
-              ? `${toLabel(riskLevel)} Drug Records`
-              : 'All Drug Records'
+        ? 'Overall Risk Trend'
+        : `${toLabel(riskLevel || 'All')} Drug Records`
 
   const summaryItems =
     activeDataset === 'provider-impact'
       ? [
           {
-            label: 'Providers',
+            label: 'Affected Providers',
             value: formatNumber(
-              data?.summary.provider_count || 0
+              data?.summary.total_records || 0
             ),
           },
           {
@@ -5772,15 +5964,21 @@ function DrugsPage({
             ),
           },
           {
-            label: 'Total Drug Cost',
-            value: formatCurrency(
-              data?.summary.total_drug_cost || 0
+            label: 'High Risk Providers',
+            value: formatNumber(
+              data?.summary.high_risk_providers || 0
             ),
           },
           {
             label: 'Average Risk Score',
             value: formatRiskScore(
               data?.summary.avg_risk_score || 0
+            ),
+          },
+          {
+            label: 'Total Drug Cost',
+            value: formatCurrency(
+              data?.summary.total_drug_cost || 0
             ),
           },
         ]
@@ -5846,6 +6044,16 @@ function DrugsPage({
 
   return (
     <>
+      <button
+        className="subpage-back-banner"
+        onClick={() => (handleBack ? handleBack() : router.push('/'))}
+        style={{ marginBottom: 14 }}
+        aria-label="Back to Dashboard"
+      >
+        <ArrowLeft size={16} />
+        Back to Dashboard
+      </button>
+
       {data && <SummaryStrip items={summaryItems} />}
 
       <Glass
@@ -6151,8 +6359,10 @@ function DrugsPage({
 
 function ProvidersPage({
   router,
+  handleBack,
 }: {
   router: RouterLike
+  handleBack?: () => void
 }) {
   const searchParams = useSearchParams()
   const [data, setData] =
@@ -6170,6 +6380,8 @@ function ProvidersPage({
     useState(searchParams.get('risk_level') || '')
   const [source, setSource] =
     useState(searchParams.get('source') || '')
+  const [alertLevel, setAlertLevel] =
+    useState(searchParams.get('alert_level') || '')
 
   const page = Number(
     searchParams.get('page') || '1'
@@ -6179,8 +6391,6 @@ function ProvidersPage({
     'volume_risk'
   const sortDir =
     searchParams.get('sort_dir') || 'desc'
-  const alertLevel =
-    searchParams.get('alert_level') || ''
 
   useEffect(() => {
     setNpi(searchParams.get('npi') || '')
@@ -6188,6 +6398,9 @@ function ProvidersPage({
       searchParams.get('risk_level') || ''
     )
     setSource(searchParams.get('source') || '')
+    setAlertLevel(
+      searchParams.get('alert_level') || ''
+    )
   }, [searchParams])
 
   useEffect(() => {
@@ -6207,6 +6420,8 @@ function ProvidersPage({
               risk_level:
                 searchParams.get('risk_level'),
               source: searchParams.get('source'),
+              alert_level:
+                searchParams.get('alert_level'),
               sort_by: searchParams.get('sort_by'),
               sort_dir:
                 searchParams.get('sort_dir'),
@@ -6216,25 +6431,10 @@ function ProvidersPage({
         if (!cancelled) {
           setData(response)
         }
-
-        if (alertLevel) {
-          const alertResponse =
-            await fetchDashboard<AlertDrilldownResponse>(
-              `/alerts/drilldown${buildQuery({
-                level: alertLevel,
-              })}`
-            )
-
-          if (!cancelled) {
-            setAlerts(alertResponse)
-          }
-        } else if (!cancelled) {
-          setAlerts(null)
-        }
       } catch (err) {
         if (!cancelled) {
           console.error(err)
-          setError('Unable to load provider data.')
+          setError('Unable to load providers.')
         }
       } finally {
         if (!cancelled) {
@@ -6248,7 +6448,41 @@ function ProvidersPage({
     return () => {
       cancelled = true
     }
-  }, [page, searchParams, alertLevel])
+  }, [page, searchParams])
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadAlertDrilldown() {
+      if (!alertLevel) {
+        setAlerts(null)
+        return
+      }
+
+      try {
+        const response =
+          await fetchDashboard<AlertDrilldownResponse>(
+            `/alerts/${encodeURIComponent(
+              alertLevel
+            )}`
+          )
+
+        if (!cancelled) {
+          setAlerts(response)
+        }
+      } catch (err) {
+        if (!cancelled) {
+          console.error(err)
+        }
+      }
+    }
+
+    loadAlertDrilldown()
+
+    return () => {
+      cancelled = true
+    }
+  }, [alertLevel])
 
   const pushFilters = (
     overrides: Record<string, string | number | undefined | null>
@@ -6259,9 +6493,9 @@ function ProvidersPage({
         npi,
         risk_level: riskLevel,
         source,
+        alert_level: alertLevel,
         sort_by: sortBy,
         sort_dir: sortDir,
-        alert_level: alertLevel,
         ...overrides,
       })}`
     )
@@ -6269,13 +6503,35 @@ function ProvidersPage({
 
   return (
     <>
+      <button
+        className="subpage-back-banner"
+        onClick={() => (handleBack ? handleBack() : router.push('/'))}
+        style={{ marginBottom: 14 }}
+        aria-label="Back to Dashboard"
+      >
+        <ArrowLeft size={16} />
+        Back to Dashboard
+      </button>
+
       {data && (
         <SummaryStrip
           items={[
             {
-              label: 'Providers',
+              label: 'Total Providers',
               value: formatNumber(
-                data.summary.provider_count
+                data.summary.total_providers
+              ),
+            },
+            {
+              label: 'High Risk Providers',
+              value: formatNumber(
+                data.summary.high_risk_providers
+              ),
+            },
+            {
+              label: 'Medium Risk Providers',
+              value: formatNumber(
+                data.summary.medium_risk_providers
               ),
             },
             {
@@ -6283,18 +6539,6 @@ function ProvidersPage({
               value: formatNumber(
                 data.summary.total_claims
               ),
-            },
-            {
-              label: 'Average Monthly Volume',
-              value: data.summary.avg_monthly_volume.toFixed(
-                1
-              ),
-            },
-            {
-              label: 'Average Deviation',
-              value: `${data.summary.avg_deviation.toFixed(
-                2
-              )}%`,
             },
           ]}
         />
@@ -6631,10 +6875,13 @@ function ProvidersPage({
 function ProviderDetailPage({
   npi,
   router,
+  initialAlertLevel,
+  handleBack,
 }: {
   npi: string
   router: RouterLike
   initialAlertLevel?: string
+  handleBack?: () => void
 }) {
   const [data, setData] =
     useState<ProviderDetailResponse | null>(null)
@@ -6683,17 +6930,39 @@ function ProviderDetailPage({
 
   if (loading) {
     return (
-      <Glass className="table-card">
-        <p>Loading provider profile…</p>
-      </Glass>
+      <>
+        <button
+          className="subpage-back-banner"
+          onClick={() => (handleBack ? handleBack() : router.push('/providers'))}
+          style={{ marginBottom: 14 }}
+          aria-label="Back to All Providers"
+        >
+          <ArrowLeft size={16} />
+          Back to All Providers
+        </button>
+        <Glass className="table-card">
+          <p>Loading provider profile…</p>
+        </Glass>
+      </>
     )
   }
 
   if (error || !data) {
     return (
-      <Glass className="table-card">
-        <p>{error || 'Provider not found.'}</p>
-      </Glass>
+      <>
+        <button
+          className="subpage-back-banner"
+          onClick={() => (handleBack ? handleBack() : router.push('/providers'))}
+          style={{ marginBottom: 14 }}
+          aria-label="Back to All Providers"
+        >
+          <ArrowLeft size={16} />
+          Back to All Providers
+        </button>
+        <Glass className="table-card">
+          <p>{error || 'Provider not found.'}</p>
+        </Glass>
+      </>
     )
   }
 
@@ -6702,6 +6971,16 @@ function ProviderDetailPage({
 
   return (
     <>
+      <button
+        className="subpage-back-banner"
+        onClick={() => (handleBack ? handleBack() : router.push('/providers'))}
+        style={{ marginBottom: 14 }}
+        aria-label="Back to All Providers"
+      >
+        <ArrowLeft size={16} />
+        Back to All Providers
+      </button>
+
       <SummaryStrip
         items={[
           {
