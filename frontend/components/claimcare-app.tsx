@@ -2,7 +2,7 @@
 
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import {
   usePathname,
   useRouter,
@@ -216,11 +216,51 @@ export default function ClaimCareApp() {
     }
   }, [])
 
-  const [viewHistory, setViewHistory] = useState<View[]>([])
+  // In-app navigation history stack
+  const [navStack, setNavStack] = useState<string[]>([])
+  const prevLocationRef = useRef<string | null>(null)
+
+  const currentLocation = pathname !== '/' ? pathname : view
+
+  useEffect(() => {
+    // Automatically record in-app transitions into navStack (ignoring landing/login)
+    if (
+      prevLocationRef.current &&
+      prevLocationRef.current !== currentLocation
+    ) {
+      if (
+        prevLocationRef.current !== 'landing' &&
+        prevLocationRef.current !== 'login'
+      ) {
+        const lastLoc = prevLocationRef.current
+        setNavStack(prev => {
+          const filtered = prev.filter(
+            item => item !== 'landing' && item !== 'login'
+          )
+          if (filtered.length > 0 && filtered[filtered.length - 1] === lastLoc) {
+            return filtered
+          }
+          return [...filtered, lastLoc]
+        })
+      }
+    }
+    prevLocationRef.current = currentLocation
+  }, [currentLocation])
 
   const go = (next: View) => {
+    if (next === 'overview' && (view === 'login' || view === 'landing')) {
+      // User just logged in or entered the dashboard: clear navigation history stack
+      setNavStack([])
+      setView('overview')
+      if (pathname !== '/') {
+        router.push('/')
+      }
+      setMobileNav(false)
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+      return
+    }
+
     if (next !== view) {
-      setViewHistory(prev => [...prev, view])
       setView(next)
     }
     setMobileNav(false)
@@ -234,70 +274,74 @@ export default function ClaimCareApp() {
   }
 
   const handleBack = () => {
-    // 1. If on dynamic claim detail route (/claims/[claimId])
+    // 1. If currently on Login page (unauthenticated), back goes to Landing
+    if (routedPage === 'dashboard' && view === 'login') {
+      setView('landing')
+      return
+    }
+
+    // 2. If currently on Landing page (unauthenticated), do nothing
+    if (routedPage === 'dashboard' && view === 'landing') {
+      return
+    }
+
+    // Filter out 'landing' and 'login' so Back NEVER goes back to signin/signup
+    const validStack = navStack.filter(
+      item => item !== 'landing' && item !== 'login'
+    )
+
+    // 3. Pop the previous location from navStack if available
+    if (validStack.length > 0) {
+      const prevLoc = validStack[validStack.length - 1]
+      const nextStack = validStack.slice(0, -1)
+      setNavStack(nextStack)
+      prevLocationRef.current = prevLoc
+
+      if (prevLoc.startsWith('/')) {
+        router.push(prevLoc)
+      } else {
+        setView(prevLoc as View)
+        if (pathname !== '/') {
+          router.push('/')
+        }
+      }
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+      return
+    }
+
+    // 4. Reliable fallbacks when history stack is empty:
+    // If on claim detail route, back to /claims
     if (pathname.startsWith('/claims/')) {
-      if (typeof window !== 'undefined' && window.history.length > 1) {
-        router.back()
-      } else {
-        router.push('/claims')
-      }
+      router.push('/claims')
       return
     }
 
-    // 2. If on dynamic provider detail route (/providers/[npi])
+    // If on provider detail route, back to /providers
     if (pathname.startsWith('/providers/')) {
-      if (typeof window !== 'undefined' && window.history.length > 1) {
-        router.back()
-      } else {
-        router.push('/providers')
-      }
+      router.push('/providers')
       return
     }
 
-    // 3. If on top-level subpages (/claims, /drugs, /providers, /data)
+    // If on any subpage (/claims, /drugs, /providers, /data), back to main dashboard overview
     if (
       pathname === '/claims' ||
       pathname === '/drugs' ||
       pathname === '/providers' ||
       pathname === '/data'
     ) {
-      if (typeof window !== 'undefined' && window.history.length > 1) {
-        router.back()
-      } else {
-        router.push('/')
-      }
-      return
-    }
-
-    // 4. If in dashboard and there are previous views in history
-    if (viewHistory.length > 0) {
-      const prevView = viewHistory[viewHistory.length - 1]
-      setViewHistory(prev => prev.slice(0, -1))
-      setView(prevView)
-      window.scrollTo({ top: 0, behavior: 'smooth' })
-      return
-    }
-
-    // 5. If in login view
-    if (view === 'login') {
-      setView('landing')
-      return
-    }
-
-    // 6. If in a dashboard subview (quality, sla, anomalies, etc.)
-    if (view !== 'overview' && view !== 'landing') {
+      router.push('/')
       setView('overview')
       return
     }
 
-    // 7. If in overview and browser has history
-    if (typeof window !== 'undefined' && window.history.length > 1) {
-      router.back()
+    // If in a dashboard subview (quality, processing, sla, anomalies, insights, alerts, batch, settings), back to overview
+    if (routedPage === 'dashboard' && view !== 'overview') {
+      setView('overview')
+      window.scrollTo({ top: 0, behavior: 'smooth' })
       return
     }
 
-    // Fallback: go to landing
-    setView('landing')
+    // If already on overview: stay on overview! Never go to login/signup/landing.
   }
 
   const displayName =
@@ -314,7 +358,7 @@ export default function ClaimCareApp() {
       <Landing
         go={go}
         handleBack={handleBack}
-        hasHistory={viewHistory.length > 0}
+        hasHistory={false}
       />
     )
   }
