@@ -195,34 +195,49 @@ export default function ClaimCareApp() {
 
   useEffect(() => {
     const raw = localStorage.getItem('claimcare_user')
+    const inApp = sessionStorage.getItem('claimcare_in_app')
 
-    if (!raw) return
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw) as Partial<AuthUser>
 
-    try {
-      const parsed = JSON.parse(raw) as Partial<AuthUser>
+        if (parsed.email) {
+          const resolvedName =
+            parsed.name?.trim() ||
+            deriveNameFromEmail(parsed.email)
 
-      if (parsed.email) {
-        const resolvedName =
-          parsed.name?.trim() ||
-          deriveNameFromEmail(parsed.email)
-
-        setCurrentUser({
-          email: parsed.email,
-          name: resolvedName,
-        })
+          setCurrentUser({
+            email: parsed.email,
+            name: resolvedName,
+          })
+          setView('overview')
+          return
+        }
+      } catch {
+        // Ignore malformed auth data in localStorage.
       }
-    } catch {
-      // Ignore malformed auth data in localStorage.
+    }
+
+    if (inApp === 'true') {
+      setView('overview')
     }
   }, [])
 
   // In-app navigation history stack
   const [navStack, setNavStack] = useState<string[]>([])
+  const isNavigatingBackRef = useRef(false)
   const prevLocationRef = useRef<string | null>(null)
 
   const currentLocation = pathname !== '/' ? pathname : view
 
   useEffect(() => {
+    // If this transition was triggered by handleBack, skip pushing to navStack
+    if (isNavigatingBackRef.current) {
+      isNavigatingBackRef.current = false
+      prevLocationRef.current = currentLocation
+      return
+    }
+
     // Automatically record in-app transitions into navStack (ignoring landing/login)
     if (
       prevLocationRef.current &&
@@ -250,6 +265,7 @@ export default function ClaimCareApp() {
   const go = (next: View) => {
     if (next === 'overview' && (view === 'login' || view === 'landing')) {
       // User just logged in or entered the dashboard: clear navigation history stack
+      sessionStorage.setItem('claimcare_in_app', 'true')
       setNavStack([])
       setView('overview')
       if (pathname !== '/') {
@@ -290,10 +306,11 @@ export default function ClaimCareApp() {
       item => item !== 'landing' && item !== 'login'
     )
 
-    // 3. Pop the previous location from navStack if available
+    // 3. Pop the immediately previous location from navStack if available
     if (validStack.length > 0) {
       const prevLoc = validStack[validStack.length - 1]
       const nextStack = validStack.slice(0, -1)
+      isNavigatingBackRef.current = true
       setNavStack(nextStack)
       prevLocationRef.current = prevLoc
 
@@ -312,12 +329,14 @@ export default function ClaimCareApp() {
     // 4. Reliable fallbacks when history stack is empty:
     // If on claim detail route, back to /claims
     if (pathname.startsWith('/claims/')) {
+      isNavigatingBackRef.current = true
       router.push('/claims')
       return
     }
 
     // If on provider detail route, back to /providers
     if (pathname.startsWith('/providers/')) {
+      isNavigatingBackRef.current = true
       router.push('/providers')
       return
     }
@@ -329,8 +348,9 @@ export default function ClaimCareApp() {
       pathname === '/providers' ||
       pathname === '/data'
     ) {
-      router.push('/')
+      isNavigatingBackRef.current = true
       setView('overview')
+      router.push('/')
       return
     }
 
@@ -352,7 +372,8 @@ export default function ClaimCareApp() {
 
   if (
     routedPage === 'dashboard' &&
-    view === 'landing'
+    view === 'landing' &&
+    !currentUser
   ) {
     return (
       <Landing
