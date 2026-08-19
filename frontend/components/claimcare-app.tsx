@@ -6017,9 +6017,9 @@ function DrugsPage({
     activeDataset === 'provider-impact'
       ? [
           {
-            label: 'Affected Providers',
+            label: 'Providers',
             value: formatNumber(
-              data?.summary.total_records || 0
+              data?.summary.provider_count || data?.summary.total_records || 0
             ),
           },
           {
@@ -6029,21 +6029,15 @@ function DrugsPage({
             ),
           },
           {
-            label: 'High Risk Providers',
-            value: formatNumber(
-              data?.summary.high_risk_providers || 0
+            label: 'Total Drug Cost',
+            value: formatCurrency(
+              data?.summary.total_drug_cost || 0
             ),
           },
           {
             label: 'Average Risk Score',
             value: formatRiskScore(
               data?.summary.avg_risk_score || 0
-            ),
-          },
-          {
-            label: 'Total Drug Cost',
-            value: formatCurrency(
-              data?.summary.total_drug_cost || 0
             ),
           },
         ]
@@ -6582,21 +6576,9 @@ function ProvidersPage({
         <SummaryStrip
           items={[
             {
-              label: 'Total Providers',
+              label: 'Providers',
               value: formatNumber(
-                data.summary.total_providers
-              ),
-            },
-            {
-              label: 'High Risk Providers',
-              value: formatNumber(
-                data.summary.high_risk_providers
-              ),
-            },
-            {
-              label: 'Medium Risk Providers',
-              value: formatNumber(
-                data.summary.medium_risk_providers
+                data.summary.provider_count
               ),
             },
             {
@@ -6604,6 +6586,14 @@ function ProvidersPage({
               value: formatNumber(
                 data.summary.total_claims
               ),
+            },
+            {
+              label: 'Average Monthly Volume',
+              value: data.summary.avg_monthly_volume.toFixed(1),
+            },
+            {
+              label: 'Average Deviation',
+              value: `${data.summary.avg_deviation.toFixed(2)}%`,
             },
           ]}
         />
