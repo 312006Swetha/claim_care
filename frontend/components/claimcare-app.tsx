@@ -7915,12 +7915,12 @@ type PharmacyRiskItem = {
 }
 
 function RiskScoresPage({ router }: { router: RouterLike }) {
-  const [activeTab, setActiveTab] = useState<'claims' | 'pharmacy' | 'executive'>('claims')
+  const [activeTab, setActiveTab] = useState<'claims' | 'pharmacy'>('claims')
   const [summary, setSummary] = useState<RiskSummaryResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  // Claims List State
+  // Claims List State (from final_sla_risk.db)
   const [claimsList, setClaimsList] = useState<ClaimRiskItem[]>([])
   const [claimTotal, setClaimTotal] = useState(0)
   const [claimPage, setClaimPage] = useState(1)
@@ -7928,7 +7928,7 @@ function RiskScoresPage({ router }: { router: RouterLike }) {
   const [claimLevelFilter, setClaimLevelFilter] = useState('ALL')
   const [selectedClaim, setSelectedClaim] = useState<ClaimRiskItem | null>(null)
 
-  // Pharmacy List State
+  // Pharmacy List State (from provider_risk.db)
   const [pharmacyList, setPharmacyList] = useState<PharmacyRiskItem[]>([])
   const [pharmacyTotal, setPharmacyTotal] = useState(0)
   const [pharmacyPage, setPharmacyPage] = useState(1)
@@ -7936,7 +7936,7 @@ function RiskScoresPage({ router }: { router: RouterLike }) {
   const [pharmacyLevelFilter, setPharmacyLevelFilter] = useState('All')
   const [selectedPharmacy, setSelectedPharmacy] = useState<PharmacyRiskItem | null>(null)
 
-  // Load Summary
+  // Load Summary from databases
   useEffect(() => {
     let isMounted = true
     async function loadSummary() {
@@ -7949,7 +7949,7 @@ function RiskScoresPage({ router }: { router: RouterLike }) {
         }
       } catch (err) {
         if (isMounted) {
-          setError('Failed to load risk score metrics from API.')
+          setError('Failed to load risk score metrics from database.')
         }
       } finally {
         if (isMounted) setLoading(false)
@@ -7959,7 +7959,7 @@ function RiskScoresPage({ router }: { router: RouterLike }) {
     return () => { isMounted = false }
   }, [])
 
-  // Load Claims Records
+  // Load Claims Records directly from final_sla_risk.db
   useEffect(() => {
     let isMounted = true
     async function loadClaims() {
@@ -7978,7 +7978,7 @@ function RiskScoresPage({ router }: { router: RouterLike }) {
     return () => { isMounted = false }
   }, [claimPage, claimSearch, claimLevelFilter])
 
-  // Load Pharmacy Records
+  // Load Pharmacy Records directly from provider_risk.db
   useEffect(() => {
     let isMounted = true
     async function loadPharmacy() {
@@ -7997,7 +7997,7 @@ function RiskScoresPage({ router }: { router: RouterLike }) {
     return () => { isMounted = false }
   }, [pharmacyPage, pharmacySearch, pharmacyLevelFilter])
 
-  // Active Score & Gauge Values
+  // Active Score & Gauge Values directly from DB
   const currentClaimScore = selectedClaim
     ? selectedClaim.final_sla_risk_score
     : summary?.claims.avg_risk_score ?? 0.0748
@@ -8025,57 +8025,49 @@ function RiskScoresPage({ router }: { router: RouterLike }) {
   const activeGaugeScore =
     activeTab === 'claims'
       ? currentClaimScore
-      : activeTab === 'pharmacy'
-      ? currentPharmScore
-      : summary?.executive.combined_avg_risk ?? 0.1639
+      : currentPharmScore
 
   const activeGaugeCategory =
     activeTab === 'claims'
       ? currentClaimCategory
-      : activeTab === 'pharmacy'
-      ? currentPharmCategory
-      : summary?.executive.gauge_info.category ?? 'Very Good'
+      : currentPharmCategory
 
   const activeGaugeColor =
     activeTab === 'claims'
       ? currentClaimColor
-      : activeTab === 'pharmacy'
-      ? currentPharmColor
-      : summary?.executive.gauge_info.color ?? '#76E025'
+      : currentPharmColor
 
   const activeGaugeLabel =
     activeTab === 'claims'
       ? selectedClaim
-        ? `Claim Provider NPI: ${selectedClaim.NPI} (${selectedClaim.final_risk_level} Risk)`
-        : 'Overall Claims SLA Risk Fleet Average (claim_risk)'
-      : activeTab === 'pharmacy'
-      ? selectedPharmacy
-        ? `Prescriber: Dr. ${selectedPharmacy.Prscrbr_First_Name} ${selectedPharmacy.Prscrbr_Last_Org_Name} (NPI: ${selectedPharmacy.npi})`
-        : 'Overall Pharmacy Prescriber Risk Fleet Average (provider_risk)'
-      : 'Executive Portfolio Combined Risk Score'
+        ? `Provider NPI: ${selectedClaim.NPI} (${selectedClaim.final_risk_level} Risk) · final_sla_risk.db`
+        : 'Claims Risk Score from final_sla_risk.db (table: provider_sla_risk)'
+      : selectedPharmacy
+      ? `Prescriber: Dr. ${selectedPharmacy.Prscrbr_First_Name} ${selectedPharmacy.Prscrbr_Last_Org_Name} (NPI: ${selectedPharmacy.npi}) · provider_risk.db`
+      : 'Pharmacy Risk Score from provider_risk.db (table: provider_risk)'
 
   return (
     <div className="risk-dashboard-wrap">
-      {/* Top Navigation & Engine Selector Tabs */}
+      {/* Top Navigation: Switch between final_sla_risk.db and provider_risk.db */}
       <div className="flex justify-between items-center flex-wrap gap-4">
         <div className="risk-tabs-control">
           <button
             className={`risk-tab-btn ${activeTab === 'claims' ? 'active' : ''}`}
-            onClick={() => setActiveTab('claims')}
+            onClick={() => {
+              setActiveTab('claims')
+              setSelectedPharmacy(null)
+            }}
           >
-            Claims Risk (`claim_risk`)
+            Claims Risk (`final_sla_risk.db`)
           </button>
           <button
             className={`risk-tab-btn ${activeTab === 'pharmacy' ? 'active' : ''}`}
-            onClick={() => setActiveTab('pharmacy')}
+            onClick={() => {
+              setActiveTab('pharmacy')
+              setSelectedClaim(null)
+            }}
           >
-            Pharmacy Risk (`provider_risk`)
-          </button>
-          <button
-            className={`risk-tab-btn ${activeTab === 'executive' ? 'active' : ''}`}
-            onClick={() => setActiveTab('executive')}
-          >
-            Portfolio Overview
+            Pharmacy Risk (`provider_risk.db`)
           </button>
         </div>
 
@@ -8092,32 +8084,30 @@ function RiskScoresPage({ router }: { router: RouterLike }) {
         )}
       </div>
 
-      {/* Top 4 KPI Metrics */}
+      {/* Top 4 KPI Metrics directly from Databases */}
       <div className="risk-kpi-grid">
         <Glass className="risk-kpi-card">
-          <span className="kpi-label">Claims Risk Average</span>
+          <span className="kpi-label">Claims Risk Score (`final_sla_risk.db`)</span>
           <strong>{summary ? `${(summary.claims.avg_risk_score * 100).toFixed(1)}%` : '7.5%'}</strong>
-          <small>{summary?.claims.total_providers ?? 410} Monitored Providers</small>
+          <small>Raw Score: {summary?.claims.avg_risk_score ?? 0.0748} · {summary?.claims.gauge_info.category ?? 'Very Good'}</small>
         </Glass>
 
         <Glass className="risk-kpi-card">
-          <span className="kpi-label">Pharmacy Risk Average</span>
+          <span className="kpi-label">Claims Providers Monitored</span>
+          <strong>{summary?.claims.total_providers ?? 410}</strong>
+          <small>Table: `provider_sla_risk` ({summary?.claims.risk_levels?.LOW ?? 409} Low, {summary?.claims.risk_levels?.MEDIUM ?? 1} Medium)</small>
+        </Glass>
+
+        <Glass className="risk-kpi-card">
+          <span className="kpi-label">Pharmacy Risk Score (`provider_risk.db`)</span>
           <strong>{summary ? `${(summary.pharmacy.avg_risk_score * 100).toFixed(1)}%` : '25.3%'}</strong>
-          <small>{summary?.pharmacy.total_providers ?? 2049} Monitored Prescribers</small>
+          <small>Raw Score: {summary?.pharmacy.avg_risk_score ?? 0.2530} · {summary?.pharmacy.gauge_info.category ?? 'Good'}</small>
         </Glass>
 
         <Glass className="risk-kpi-card">
-          <span className="kpi-label">Portfolio Health Index</span>
-          <strong>{summary ? `${summary.executive.portfolio_health_index}%` : '83.6%'}</strong>
-          <small>Composite Quality & SLA Conformance</small>
-        </Glass>
-
-        <Glass className="risk-kpi-card">
-          <span className="kpi-label">Total Monitored Entities</span>
-          <strong>{summary?.executive.total_entities ?? 2459}</strong>
-          <small className="text-amber">
-            {summary?.executive.critical_or_high_count ?? 6} Elevated / High Risk
-          </small>
+          <span className="kpi-label">Pharmacy Prescribers Monitored</span>
+          <strong>{summary?.pharmacy.total_providers ?? 2049}</strong>
+          <small>Table: `provider_risk` ({summary?.pharmacy.risk_levels?.Low ?? 1794} Low, {summary?.pharmacy.risk_levels?.Moderate ?? 249} Mod, {summary?.pharmacy.risk_levels?.High ?? 6} High)</small>
         </Glass>
       </div>
 
@@ -8127,13 +8117,13 @@ function RiskScoresPage({ router }: { router: RouterLike }) {
         <Glass className="risk-gauge-card">
           <div className="w-full flex justify-between items-center mb-2">
             <div>
-              <p className="eyebrow">FINAL RISK GAUGE METER</p>
+              <p className="eyebrow">
+                {activeTab === 'claims' ? 'FINAL_SLA_RISK.DB / PROVIDER_SLA_RISK' : 'PROVIDER_RISK.DB / PROVIDER_RISK'}
+              </p>
               <h2 className="text-lg font-bold">
                 {activeTab === 'claims'
-                  ? selectedClaim ? `Claim Provider ${selectedClaim.NPI}` : 'Claims Risk Score'
-                  : activeTab === 'pharmacy'
-                  ? selectedPharmacy ? `Dr. ${selectedPharmacy.Prscrbr_Last_Org_Name}` : 'Pharmacy Risk Score'
-                  : 'Portfolio Composite Score'}
+                  ? selectedClaim ? `Claim Provider NPI: ${selectedClaim.NPI}` : 'Claims Final Risk Score'
+                  : selectedPharmacy ? `Dr. ${selectedPharmacy.Prscrbr_First_Name} ${selectedPharmacy.Prscrbr_Last_Org_Name}` : 'Pharmacy Final Risk Score'}
               </h2>
             </div>
             <Status tone={activeGaugeCategory === 'Poor' ? 'bad' : activeGaugeCategory === 'Fair' ? 'warn' : 'good'}>
@@ -8152,7 +8142,7 @@ function RiskScoresPage({ router }: { router: RouterLike }) {
           {/* Selected Entity Recommendation / Root Cause */}
           {selectedClaim && (
             <div className="recommendation-panel text-left w-full">
-              <strong className="text-xs text-aqua">ROOT CAUSE ANALYSIS</strong>
+              <strong className="text-xs text-aqua">ROOT CAUSE ANALYSIS (final_sla_risk.db)</strong>
               <p>{selectedClaim.root_cause || 'Balanced risk profile with no single dominant failure.'}</p>
               <strong className="text-xs text-aqua mt-2">OPERATIONAL RECOMMENDATION</strong>
               <p>{selectedClaim.recommendation || 'Continue routine performance monitoring.'}</p>
@@ -8161,7 +8151,7 @@ function RiskScoresPage({ router }: { router: RouterLike }) {
 
           {selectedPharmacy && (
             <div className="recommendation-panel text-left w-full">
-              <strong className="text-xs text-aqua">PRESCRIBER PROFILE DETAILS</strong>
+              <strong className="text-xs text-aqua">PRESCRIBER PROFILE (provider_risk.db)</strong>
               <p>
                 Specialty: <strong>{selectedPharmacy.Prscrbr_Type || 'General'}</strong> · Location: <strong>{selectedPharmacy.Prscrbr_City}, {selectedPharmacy.Prscrbr_State_Abrvtn}</strong>
               </p>
