@@ -9,6 +9,8 @@
 *.sqlite
 *.sqlite3
 *.pdf
+*.joblib
+*.pkl
 
 # Dataset directories
 Data/
@@ -42,5 +44,6 @@ frontend/.next/
 .env*
 .env.local
 .DS_Store
+
 
 

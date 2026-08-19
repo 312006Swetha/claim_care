@@ -52,6 +52,7 @@ AUTH_VOLUME_DB = find_db_path("auth_volume.db")
 AUTH_DAGSTER_DB = find_db_path("auth_dagster.db")
 AUTH_SLA_DB = find_db_path("auth_sla.db")
 FINAL_SLA_RISK_DB = find_db_path("final_sla_risk.db")
+PROVIDER_RISK_DB = find_db_path("provider_risk.db")
 PHARMACY_DQ_DB = find_db_path("pharmacy_database.db")
 DAGSTER_DQ_DB = find_db_path("claim_dagster.db")
 CLAIM_SENTINEL_DB = find_db_path("claim_sentinel.db")
@@ -4066,6 +4067,332 @@ def alert_drilldown():
         print("Alert drilldown SLA warning:", e)
 
     return jsonify(result)
+
+
+# ============================================================
+# RISK SCORE & GAUGE METRICS API (claim_risk & provider_risk)
+# ============================================================
+
+def categorize_gauge_score(score):
+    """
+    Score ranges: 0.0 to 1.0 (Risk Score)
+    Mapped to 5 gauge bands:
+      0.00 - 0.09: Excellent (Lowest Risk / Top Health)
+      0.10 - 0.24: Very Good (Low Risk)
+      0.25 - 0.49: Good (Moderate Risk)
+      0.50 - 0.74: Fair (Elevated Risk)
+      0.75 - 1.00: Poor (Critical Risk)
+    """
+    if score is None:
+        return {"category": "Unknown", "band": 0, "color": "#94A3B8", "health_index": 0.0}
+    try:
+        s = float(score)
+    except (ValueError, TypeError):
+        return {"category": "Unknown", "band": 0, "color": "#94A3B8", "health_index": 0.0}
+
+    health = round(max(0.0, min(100.0, (1.0 - s) * 100.0)), 1)
+    if s < 0.10:
+        return {"category": "Excellent", "band": 5, "color": "#00875A", "health_index": health, "risk_pct": round(s * 100, 1)}
+    elif s < 0.25:
+        return {"category": "Very Good", "band": 4, "color": "#34C759", "health_index": health, "risk_pct": round(s * 100, 1)}
+    elif s < 0.50:
+        return {"category": "Good", "band": 3, "color": "#FFCC00", "health_index": health, "risk_pct": round(s * 100, 1)}
+    elif s < 0.75:
+        return {"category": "Fair", "band": 2, "color": "#FF9500", "health_index": health, "risk_pct": round(s * 100, 1)}
+    else:
+        return {"category": "Poor", "band": 1, "color": "#FF2D55", "health_index": health, "risk_pct": round(s * 100, 1)}
+
+
+@app.route("/api/risk/summary", methods=["GET"])
+def get_risk_summary():
+    try:
+        # 1. Claim Risk from final_sla_risk.db
+        claim_summary = {
+            "total_providers": 0,
+            "avg_risk_score": 0.0,
+            "min_risk_score": 0.0,
+            "max_risk_score": 0.0,
+            "gauge_distribution": {"Poor": 0, "Fair": 0, "Good": 0, "Very Good": 0, "Excellent": 0},
+            "risk_levels": {"LOW": 0, "MEDIUM": 0, "HIGH": 0, "CRITICAL": 0},
+            "components": {
+                "dq_risk": {"weight": 0.25, "avg": 0.0, "label": "Data Quality Risk"},
+                "volume_risk": {"weight": 0.20, "avg": 0.0, "label": "Volume Risk"},
+                "robust_z_risk": {"weight": 0.20, "avg": 0.0, "label": "Robust-Z Anomaly Risk"},
+                "psi_risk": {"weight": 0.15, "avg": 0.0, "label": "PSI Drift Risk"},
+                "arrival_delay_risk": {"weight": 0.20, "avg": 0.20, "label": "Arrival Delay Risk"},
+            },
+            "top_risk": []
+        }
+
+        if os.path.exists(FINAL_SLA_RISK_DB):
+            with get_connection(FINAL_SLA_RISK_DB) as conn:
+                claims_rows = conn.execute("SELECT * FROM provider_sla_risk").fetchall()
+                if claims_rows:
+                    scores = [r["final_sla_risk_score"] for r in claims_rows if r["final_sla_risk_score"] is not None]
+                    claim_summary["total_providers"] = len(claims_rows)
+                    if scores:
+                        claim_summary["avg_risk_score"] = round(float(sum(scores) / len(scores)), 4)
+                        claim_summary["min_risk_score"] = round(float(min(scores)), 4)
+                        claim_summary["max_risk_score"] = round(float(max(scores)), 4)
+
+                    dq_vals, vol_vals, rz_vals, psi_vals, arr_vals = [], [], [], [], []
+                    for r in claims_rows:
+                        s = r["final_sla_risk_score"]
+                        cat = categorize_gauge_score(s)["category"]
+                        if cat in claim_summary["gauge_distribution"]:
+                            claim_summary["gauge_distribution"][cat] += 1
+
+                        lvl = (r["final_risk_level"] or "LOW").upper()
+                        if lvl in claim_summary["risk_levels"]:
+                            claim_summary["risk_levels"][lvl] += 1
+                        else:
+                            claim_summary["risk_levels"][lvl] = 1
+
+                        if r["dq_risk"] is not None: dq_vals.append(r["dq_risk"])
+                        if r["volume_risk"] is not None: vol_vals.append(r["volume_risk"])
+                        if r["robust_z_risk"] is not None: rz_vals.append(r["robust_z_risk"])
+                        if r["psi_risk"] is not None: psi_vals.append(r["psi_risk"])
+                        if r["arrival_delay_risk"] is not None: arr_vals.append(r["arrival_delay_risk"])
+
+                    if dq_vals: claim_summary["components"]["dq_risk"]["avg"] = round(float(sum(dq_vals)/len(dq_vals)), 4)
+                    if vol_vals: claim_summary["components"]["volume_risk"]["avg"] = round(float(sum(vol_vals)/len(vol_vals)), 4)
+                    if rz_vals: claim_summary["components"]["robust_z_risk"]["avg"] = round(float(sum(rz_vals)/len(rz_vals)), 4)
+                    if psi_vals: claim_summary["components"]["psi_risk"]["avg"] = round(float(sum(psi_vals)/len(psi_vals)), 4)
+                    if arr_vals: claim_summary["components"]["arrival_delay_risk"]["avg"] = round(float(sum(arr_vals)/len(arr_vals)), 4)
+
+                top_claims = conn.execute("SELECT * FROM provider_sla_risk ORDER BY final_sla_risk_score DESC LIMIT 5").fetchall()
+                claim_summary["top_risk"] = rows_to_dict(top_claims)
+
+        claim_summary["gauge_info"] = categorize_gauge_score(claim_summary["avg_risk_score"])
+
+        # 2. Pharmacy Risk from provider_risk.db
+        pharmacy_summary = {
+            "total_providers": 0,
+            "avg_risk_score": 0.0,
+            "min_risk_score": 0.0,
+            "max_risk_score": 0.0,
+            "gauge_distribution": {"Poor": 0, "Fair": 0, "Good": 0, "Very Good": 0, "Excellent": 0},
+            "risk_levels": {"Low": 0, "Moderate": 0, "High": 0, "Critical": 0},
+            "components": {
+                "dq_risk": {"weight": 0.25, "avg": 0.0, "label": "Data Quality Risk"},
+                "volume_risk": {"weight": 0.20, "avg": 0.0, "label": "Volume Risk"},
+                "robust_z_risk": {"weight": 0.20, "avg": 0.0, "label": "Robust-Z Anomaly Risk"},
+                "psi_risk": {"weight": 0.15, "avg": 0.0, "label": "PSI Drift Risk"},
+                "arrival_delay_risk": {"weight": 0.20, "avg": 0.20, "label": "Arrival Delay Risk"},
+            },
+            "top_risk": []
+        }
+
+        if os.path.exists(PROVIDER_RISK_DB):
+            with get_connection(PROVIDER_RISK_DB) as conn:
+                pharm_rows = conn.execute("SELECT * FROM provider_risk").fetchall()
+                if pharm_rows:
+                    scores = [r["Final_Risk_Score"] for r in pharm_rows if r["Final_Risk_Score"] is not None]
+                    pharmacy_summary["total_providers"] = len(pharm_rows)
+                    if scores:
+                        pharmacy_summary["avg_risk_score"] = round(float(sum(scores) / len(scores)), 4)
+                        pharmacy_summary["min_risk_score"] = round(float(min(scores)), 4)
+                        pharmacy_summary["max_risk_score"] = round(float(max(scores)), 4)
+
+                    dq_vals, vol_vals, rz_vals, psi_vals, arr_vals = [], [], [], [], []
+                    for r in pharm_rows:
+                        s = r["Final_Risk_Score"]
+                        cat = categorize_gauge_score(s)["category"]
+                        if cat in pharmacy_summary["gauge_distribution"]:
+                            pharmacy_summary["gauge_distribution"][cat] += 1
+
+                        lvl = (r["Risk_Level"] or "Low").capitalize()
+                        if lvl in pharmacy_summary["risk_levels"]:
+                            pharmacy_summary["risk_levels"][lvl] += 1
+                        else:
+                            pharmacy_summary["risk_levels"][lvl] = 1
+
+                        if r["DQ_Risk"] is not None: dq_vals.append(r["DQ_Risk"])
+                        if r["Volume_Risk"] is not None: vol_vals.append(r["Volume_Risk"])
+                        if r["RobustZ_Risk"] is not None: rz_vals.append(r["RobustZ_Risk"])
+                        if r["PSI_Risk"] is not None: psi_vals.append(r["PSI_Risk"])
+                        if r["ArrivalDelay_Risk"] is not None: arr_vals.append(r["ArrivalDelay_Risk"])
+
+                    if dq_vals: pharmacy_summary["components"]["dq_risk"]["avg"] = round(float(sum(dq_vals)/len(dq_vals)), 4)
+                    if vol_vals: pharmacy_summary["components"]["volume_risk"]["avg"] = round(float(sum(vol_vals)/len(vol_vals)), 4)
+                    if rz_vals: pharmacy_summary["components"]["robust_z_risk"]["avg"] = round(float(sum(rz_vals)/len(rz_vals)), 4)
+                    if psi_vals: pharmacy_summary["components"]["psi_risk"]["avg"] = round(float(sum(psi_vals)/len(psi_vals)), 4)
+                    if arr_vals: pharmacy_summary["components"]["arrival_delay_risk"]["avg"] = round(float(sum(arr_vals)/len(arr_vals)), 4)
+
+                top_pharm = conn.execute("SELECT * FROM provider_risk ORDER BY Final_Risk_Score DESC LIMIT 5").fetchall()
+                pharmacy_summary["top_risk"] = rows_to_dict(top_pharm)
+
+        pharmacy_summary["gauge_info"] = categorize_gauge_score(pharmacy_summary["avg_risk_score"])
+
+        # 3. Combined Executive Portfolio Metric
+        combined_avg = round((claim_summary["avg_risk_score"] + pharmacy_summary["avg_risk_score"]) / 2, 4)
+        executive = {
+            "combined_avg_risk": combined_avg,
+            "portfolio_health_index": round((1 - combined_avg) * 100, 1),
+            "total_entities": claim_summary["total_providers"] + pharmacy_summary["total_providers"],
+            "gauge_info": categorize_gauge_score(combined_avg),
+            "critical_or_high_count": claim_summary["risk_levels"].get("HIGH", 0) + claim_summary["risk_levels"].get("CRITICAL", 0) + pharmacy_summary["risk_levels"].get("High", 0) + pharmacy_summary["risk_levels"].get("Critical", 0)
+        }
+
+        return jsonify({
+            "status": "success",
+            "executive": executive,
+            "claims": claim_summary,
+            "pharmacy": pharmacy_summary,
+        })
+
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route("/api/risk/claims", methods=["GET"])
+def get_claims_risk_list():
+    try:
+        if not os.path.exists(FINAL_SLA_RISK_DB):
+            return jsonify({"status": "error", "message": "Claims risk database not found"}), 404
+
+        search = request.args.get("search", "").strip()
+        risk_level = request.args.get("risk_level", "all").strip().upper()
+        sort_by = request.args.get("sort_by", "final_sla_risk_score").strip()
+        sort_order = "ASC" if request.args.get("sort_order", "desc").lower() == "asc" else "DESC"
+        page = max(1, int(request.args.get("page", 1)))
+        per_page = min(100, max(5, int(request.args.get("per_page", 15))))
+
+        allowed_sort = {"final_sla_risk_score", "NPI", "current_month_volume", "dq_risk", "volume_risk", "robust_z_risk", "psi_risk", "final_risk_level"}
+        if sort_by not in allowed_sort:
+            sort_by = "final_sla_risk_score"
+
+        with get_connection(FINAL_SLA_RISK_DB) as conn:
+            query = "SELECT * FROM provider_sla_risk WHERE 1=1"
+            params = []
+
+            if search:
+                query += " AND (NPI LIKE ? OR root_cause LIKE ? OR recommendation LIKE ?)"
+                like_pat = f"%{search}%"
+                params.extend([like_pat, like_pat, like_pat])
+
+            if risk_level and risk_level != "ALL":
+                query += " AND final_risk_level = ?"
+                params.append(risk_level)
+
+            count_query = query.replace("SELECT *", "SELECT COUNT(*)", 1)
+            total = conn.execute(count_query, params).fetchone()[0]
+
+            query += f" ORDER BY {sort_by} {sort_order} LIMIT ? OFFSET ?"
+            params.extend([per_page, (page - 1) * per_page])
+
+            rows = conn.execute(query, params).fetchall()
+            items = []
+            for r in rows:
+                item = dict(r)
+                item["gauge_info"] = categorize_gauge_score(item.get("final_sla_risk_score"))
+                items.append(item)
+
+            return jsonify({
+                "status": "success",
+                "total": total,
+                "page": page,
+                "per_page": per_page,
+                "total_pages": ceil(total / per_page) if total > 0 else 1,
+                "data": items
+            })
+
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route("/api/risk/claims/<npi>", methods=["GET"])
+def get_claim_provider_risk(npi):
+    try:
+        if not os.path.exists(FINAL_SLA_RISK_DB):
+            return jsonify({"status": "error", "message": "Claims risk database not found"}), 404
+
+        with get_connection(FINAL_SLA_RISK_DB) as conn:
+            row = conn.execute("SELECT * FROM provider_sla_risk WHERE NPI = ?", (str(npi),)).fetchone()
+            if not row:
+                return jsonify({"status": "error", "message": f"Claim Provider NPI {npi} not found"}), 404
+
+            item = dict(row)
+            item["gauge_info"] = categorize_gauge_score(item.get("final_sla_risk_score"))
+            return jsonify({"status": "success", "data": item})
+
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route("/api/risk/pharmacy", methods=["GET"])
+def get_pharmacy_risk_list():
+    try:
+        if not os.path.exists(PROVIDER_RISK_DB):
+            return jsonify({"status": "error", "message": "Pharmacy risk database not found"}), 404
+
+        search = request.args.get("search", "").strip()
+        risk_level = request.args.get("risk_level", "all").strip().capitalize()
+        sort_by = request.args.get("sort_by", "Final_Risk_Score").strip()
+        sort_order = "ASC" if request.args.get("sort_order", "desc").lower() == "asc" else "DESC"
+        page = max(1, int(request.args.get("page", 1)))
+        per_page = min(100, max(5, int(request.args.get("per_page", 15))))
+
+        allowed_sort = {"Final_Risk_Score", "npi", "Prscrbr_Last_Org_Name", "Prscrbr_Type", "Volume_Risk", "DQ_Risk", "RobustZ_Risk", "PSI_Risk", "Risk_Level"}
+        if sort_by not in allowed_sort:
+            sort_by = "Final_Risk_Score"
+
+        with get_connection(PROVIDER_RISK_DB) as conn:
+            query = "SELECT * FROM provider_risk WHERE 1=1"
+            params = []
+
+            if search:
+                query += " AND (npi LIKE ? OR Prscrbr_Last_Org_Name LIKE ? OR Prscrbr_First_Name LIKE ? OR Prscrbr_City LIKE ? OR Prscrbr_Type LIKE ?)"
+                like_pat = f"%{search}%"
+                params.extend([like_pat, like_pat, like_pat, like_pat, like_pat])
+
+            if risk_level and risk_level != "All":
+                query += " AND Risk_Level = ?"
+                params.append(risk_level)
+
+            count_query = query.replace("SELECT *", "SELECT COUNT(*)", 1)
+            total = conn.execute(count_query, params).fetchone()[0]
+
+            query += f" ORDER BY {sort_by} {sort_order} LIMIT ? OFFSET ?"
+            params.extend([per_page, (page - 1) * per_page])
+
+            rows = conn.execute(query, params).fetchall()
+            items = []
+            for r in rows:
+                item = dict(r)
+                item["gauge_info"] = categorize_gauge_score(item.get("Final_Risk_Score"))
+                items.append(item)
+
+            return jsonify({
+                "status": "success",
+                "total": total,
+                "page": page,
+                "per_page": per_page,
+                "total_pages": ceil(total / per_page) if total > 0 else 1,
+                "data": items
+            })
+
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route("/api/risk/pharmacy/<npi>", methods=["GET"])
+def get_pharmacy_provider_risk(npi):
+    try:
+        if not os.path.exists(PROVIDER_RISK_DB):
+            return jsonify({"status": "error", "message": "Pharmacy risk database not found"}), 404
+
+        with get_connection(PROVIDER_RISK_DB) as conn:
+            row = conn.execute("SELECT * FROM provider_risk WHERE npi = ?", (str(npi),)).fetchone()
+            if not row:
+                return jsonify({"status": "error", "message": f"Pharmacy Prescriber NPI {npi} not found"}), 404
+
+            item = dict(row)
+            item["gauge_info"] = categorize_gauge_score(item.get("Final_Risk_Score"))
+            return jsonify({"status": "success", "data": item})
+
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 
 # ============================================================

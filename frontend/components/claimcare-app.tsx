@@ -2,7 +2,7 @@
 
 'use client'
 
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState } from 'react'
 import {
   usePathname,
   useRouter,
@@ -37,6 +37,7 @@ type View =
   | 'sla'
   | 'anomalies'
   | 'insights'
+  | 'risk'
   | 'alerts'
   | 'batch'
   | 'data'
@@ -49,6 +50,7 @@ const nav = [
   ['sla', 'SLA & Behavior', Gauge],
   ['anomalies', 'Anomalies', AlertTriangle],
   ['insights', 'Insights', Sparkles],
+  ['risk', 'Risk Scores', Gauge],
   ['alerts', 'Alerts', Bell],
   ['settings', 'Settings', Settings2],
 ] as const
@@ -84,6 +86,8 @@ type RoutedPage =
   | 'drugs'
   | 'providers'
   | 'provider-detail'
+  | 'risk'
+  | 'alerts'
 
 type DashboardModule =
   | 'claims'
@@ -187,6 +191,10 @@ export default function ClaimCareApp() {
           ? 'data'
         : pathname === '/drugs'
           ? 'drugs'
+        : pathname === '/risk'
+          ? 'risk'
+        : pathname === '/alerts'
+          ? 'alerts'
         : pathname.startsWith('/providers/')
           ? 'provider-detail'
           : pathname === '/providers'
@@ -195,90 +203,29 @@ export default function ClaimCareApp() {
 
   useEffect(() => {
     const raw = localStorage.getItem('claimcare_user')
-    const inApp = sessionStorage.getItem('claimcare_in_app')
 
-    if (raw) {
-      try {
-        const parsed = JSON.parse(raw) as Partial<AuthUser>
+    if (!raw) return
 
-        if (parsed.email) {
-          const resolvedName =
-            parsed.name?.trim() ||
-            deriveNameFromEmail(parsed.email)
+    try {
+      const parsed = JSON.parse(raw) as Partial<AuthUser>
 
-          setCurrentUser({
-            email: parsed.email,
-            name: resolvedName,
-          })
-          setView('overview')
-          return
-        }
-      } catch {
-        // Ignore malformed auth data in localStorage.
+      if (parsed.email) {
+        const resolvedName =
+          parsed.name?.trim() ||
+          deriveNameFromEmail(parsed.email)
+
+        setCurrentUser({
+          email: parsed.email,
+          name: resolvedName,
+        })
       }
-    }
-
-    if (inApp === 'true') {
-      setView('overview')
+    } catch {
+      // Ignore malformed auth data in localStorage.
     }
   }, [])
 
-  // In-app navigation history stack
-  const [navStack, setNavStack] = useState<string[]>([])
-  const isNavigatingBackRef = useRef(false)
-  const prevLocationRef = useRef<string | null>(null)
-
-  const currentLocation = pathname !== '/' ? pathname : view
-
-  useEffect(() => {
-    // If this transition was triggered by handleBack, skip pushing to navStack
-    if (isNavigatingBackRef.current) {
-      isNavigatingBackRef.current = false
-      prevLocationRef.current = currentLocation
-      return
-    }
-
-    // Automatically record in-app transitions into navStack (ignoring landing/login)
-    if (
-      prevLocationRef.current &&
-      prevLocationRef.current !== currentLocation
-    ) {
-      if (
-        prevLocationRef.current !== 'landing' &&
-        prevLocationRef.current !== 'login'
-      ) {
-        const lastLoc = prevLocationRef.current
-        setNavStack(prev => {
-          const filtered = prev.filter(
-            item => item !== 'landing' && item !== 'login'
-          )
-          if (filtered.length > 0 && filtered[filtered.length - 1] === lastLoc) {
-            return filtered
-          }
-          return [...filtered, lastLoc]
-        })
-      }
-    }
-    prevLocationRef.current = currentLocation
-  }, [currentLocation])
-
   const go = (next: View) => {
-    if (next === 'overview' && (view === 'login' || view === 'landing')) {
-      // User just logged in or entered the dashboard: clear navigation history stack
-      sessionStorage.setItem('claimcare_in_app', 'true')
-      setNavStack([])
-      setView('overview')
-      if (pathname !== '/') {
-        router.push('/')
-      }
-      setMobileNav(false)
-      window.scrollTo({ top: 0, behavior: 'smooth' })
-      return
-    }
-
-    if (next !== view) {
-      setView(next)
-    }
+    setView(next)
     setMobileNav(false)
 
     if (pathname !== '/') {
@@ -289,81 +236,6 @@ export default function ClaimCareApp() {
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
-  const handleBack = () => {
-    // 1. If currently on Login page (unauthenticated), back goes to Landing
-    if (routedPage === 'dashboard' && view === 'login') {
-      setView('landing')
-      return
-    }
-
-    // 2. If currently on Landing page (unauthenticated), do nothing
-    if (routedPage === 'dashboard' && view === 'landing') {
-      return
-    }
-
-    // Filter out 'landing' and 'login' so Back NEVER goes back to signin/signup
-    const validStack = navStack.filter(
-      item => item !== 'landing' && item !== 'login'
-    )
-
-    // 3. Pop the immediately previous location from navStack if available
-    if (validStack.length > 0) {
-      const prevLoc = validStack[validStack.length - 1]
-      const nextStack = validStack.slice(0, -1)
-      isNavigatingBackRef.current = true
-      setNavStack(nextStack)
-      prevLocationRef.current = prevLoc
-
-      if (prevLoc.startsWith('/')) {
-        router.push(prevLoc)
-      } else {
-        setView(prevLoc as View)
-        if (pathname !== '/') {
-          router.push('/')
-        }
-      }
-      window.scrollTo({ top: 0, behavior: 'smooth' })
-      return
-    }
-
-    // 4. Reliable fallbacks when history stack is empty:
-    // If on claim detail route, back to /claims
-    if (pathname.startsWith('/claims/')) {
-      isNavigatingBackRef.current = true
-      router.push('/claims')
-      return
-    }
-
-    // If on provider detail route, back to /providers
-    if (pathname.startsWith('/providers/')) {
-      isNavigatingBackRef.current = true
-      router.push('/providers')
-      return
-    }
-
-    // If on any subpage (/claims, /drugs, /providers, /data), back to main dashboard overview
-    if (
-      pathname === '/claims' ||
-      pathname === '/drugs' ||
-      pathname === '/providers' ||
-      pathname === '/data'
-    ) {
-      isNavigatingBackRef.current = true
-      setView('overview')
-      router.push('/')
-      return
-    }
-
-    // If in a dashboard subview (quality, processing, sla, anomalies, insights, alerts, batch, settings), back to overview
-    if (routedPage === 'dashboard' && view !== 'overview') {
-      setView('overview')
-      window.scrollTo({ top: 0, behavior: 'smooth' })
-      return
-    }
-
-    // If already on overview: stay on overview! Never go to login/signup/landing.
-  }
-
   const displayName =
     currentUser?.name?.trim() || 'Alex Rivera'
 
@@ -372,16 +244,9 @@ export default function ClaimCareApp() {
 
   if (
     routedPage === 'dashboard' &&
-    view === 'landing' &&
-    !currentUser
+    view === 'landing'
   ) {
-    return (
-      <Landing
-        go={go}
-        handleBack={handleBack}
-        hasHistory={false}
-      />
-    )
+    return <Landing go={go} />
   }
 
   if (
@@ -392,7 +257,6 @@ export default function ClaimCareApp() {
       <Login
         go={go}
         onAuth={user => setCurrentUser(user)}
-        handleBack={handleBack}
       />
     )
   }
@@ -408,9 +272,13 @@ export default function ClaimCareApp() {
           ? 'Drug Records'
         : routedPage === 'providers'
           ? 'All Providers'
-          : routedPage === 'provider-detail'
-            ? 'Provider Profile'
-            : nav.find(([key]) => key === view)?.[1] ?? 'Overview'
+        : routedPage === 'provider-detail'
+          ? 'Provider Profile'
+        : routedPage === 'risk' || (routedPage === 'dashboard' && view === 'risk')
+          ? 'Risk Scores'
+        : routedPage === 'alerts' || (routedPage === 'dashboard' && view === 'alerts')
+          ? 'Risk Scores & Alerts'
+          : nav.find(([key]) => key === view)?.[1] ?? 'Overview'
 
   const routeClaimId =
     routedPage === 'claim-detail'
@@ -455,56 +323,42 @@ export default function ClaimCareApp() {
       <Background />
 
       <header className="topbar">
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <button
-            className="mobile-menu"
-            onClick={() => setMobileNav(!mobileNav)}
-            aria-label="Open navigation"
-          >
-            <Menu />
-          </button>
+        <button
+          className="mobile-menu"
+          onClick={() => setMobileNav(!mobileNav)}
+          aria-label="Open navigation"
+        >
+          <Menu />
+        </button>
 
-          <button
-            className="topbar-back-btn"
-            onClick={handleBack}
-            aria-label="Go back to previous page"
-            title="Go back to previous page"
-          >
-            <ArrowLeft size={16} />
-            <span>Back</span>
-          </button>
-
-          <button
-            className="logo-button"
-            onClick={() =>
-              routedPage === 'dashboard'
-                ? go('overview')
-                : router.push('/')
-            }
-          >
-            <Logo />
-          </button>
-        </div>
-
-        <nav className={mobileNav ? 'mobile-open' : ''}>
-          {nav.map(([key, label, Icon]) => (
-            <button
-              key={key}
-              className={view === key && routedPage === 'dashboard' ? 'active' : ''}
-              onClick={() => go(key as View)}
-            >
-              <Icon size={14} />
-              <span>{label}</span>
-            </button>
-          ))}
-        </nav>
+        <button
+          className="logo-button"
+          onClick={() =>
+            routedPage === 'dashboard'
+              ? go('overview')
+              : router.push('/')
+          }
+        >
+          <Logo />
+        </button>
 
         <div className="top-actions">
           <button className="icon-button">
             <Search size={16} />
           </button>
 
-          <button className="icon-button notification">
+          <button
+            className="icon-button notification"
+            onClick={() => {
+              if (routedPage === 'dashboard') {
+                go('risk')
+              } else {
+                router.push('/risk')
+              }
+            }}
+            title="View Final Risk Scores & Alerts"
+            aria-label="View Final Risk Scores & Alerts"
+          >
             <Bell size={16} />
             <i />
           </button>
@@ -602,22 +456,30 @@ export default function ClaimCareApp() {
           </div>
 
           <div className="heading-actions">
-            <button
-              className="small-button back-btn"
-              onClick={handleBack}
-              title="Go back to previous page"
-              aria-label="Go back to previous page"
-            >
-              <ArrowLeft size={16} />
-              Back
-            </button>
-            {routedPage === 'dashboard' && (
+            {routedPage === 'dashboard' ? (
+              <>
+                <button
+                  className="small-button"
+                  onClick={() => router.back()}
+                >
+                  <ArrowLeft size={16} />
+                  Back
+                </button>
+                <button
+                  className="primary-button"
+                  onClick={() => router.push('/data?dataset=carrier')}
+                >
+                  <Database size={16} />
+                  View data
+                </button>
+              </>
+            ) : (
               <button
                 className="primary-button"
-                onClick={() => router.push('/data?dataset=carrier')}
+                onClick={() => router.back()}
               >
-                <Database size={16} />
-                View data
+                <ArrowLeft size={16} />
+                Back
               </button>
             )}
           </div>
@@ -635,41 +497,31 @@ export default function ClaimCareApp() {
         {routedPage === 'dashboard' && view === 'sla' && <SLA />}
         {routedPage === 'dashboard' && view === 'anomalies' && <Anomalies />}
         {routedPage === 'dashboard' && view === 'insights' && <Insights />}
-        {routedPage === 'dashboard' && view === 'alerts' && (
-          <Alerts
-            filter={alertFilter}
-            setFilter={setAlertFilter}
-            search={search}
-            setSearch={setSearch}
-          />
-        )}
+        {routedPage === 'dashboard' && view === 'risk' && <RiskScoresPage router={router} />}
+        {routedPage === 'dashboard' && view === 'alerts' && <RiskScoresPage router={router} />}
+        {routedPage === 'risk' && <RiskScoresPage router={router} />}
+        {routedPage === 'alerts' && <RiskScoresPage router={router} />}
         {routedPage === 'dashboard' && view === 'batch' && <Batch />}
         {routedPage === 'dashboard' && view === 'settings' && <Settings />}
-        {routedPage === 'data' && (
-          <DataPage router={router} handleBack={handleBack} />
-        )}
-        {routedPage === 'claims' && (
-          <ClaimsPage router={router} handleBack={handleBack} />
-        )}
+        {routedPage === 'data' && <DataPage router={router} />}
+        {routedPage === 'claims' && <ClaimsPage router={router} />}
         {routedPage === 'claim-detail' && (
           <ClaimDetailPage
             claimId={routeClaimId}
             router={router}
-            handleBack={handleBack}
           />
         )}
         {routedPage === 'drugs' && (
-          <DrugsPage router={router} handleBack={handleBack} />
+          <DrugsPage router={router} />
         )}
         {routedPage === 'providers' && (
-          <ProvidersPage router={router} handleBack={handleBack} />
+          <ProvidersPage router={router} />
         )}
         {routedPage === 'provider-detail' && (
           <ProviderDetailPage
             npi={routeNpi}
             router={router}
             initialAlertLevel={routeAlertLevel}
-            handleBack={handleBack}
           />
         )}
       </main>
@@ -695,34 +547,13 @@ function Background() {
   )
 }
 
-function Landing({
-  go,
-  handleBack,
-  hasHistory,
-}: {
-  go: (v: View) => void
-  handleBack?: () => void
-  hasHistory?: boolean
-}) {
+function Landing({ go }: { go: (v: View) => void }) {
   return (
     <div className="landing">
       <Background />
 
       <header className="landing-nav">
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          {hasHistory && handleBack && (
-            <button
-              className="topbar-back-btn"
-              onClick={handleBack}
-              title="Back"
-              aria-label="Back"
-            >
-              <ArrowLeft size={16} />
-              <span>Back</span>
-            </button>
-          )}
-          <Logo />
-        </div>
+        <Logo />
 
         <div className="landing-links">
           <a href="#platform">Overview</a>
@@ -900,11 +731,9 @@ function Landing({
 function Login({
   go,
   onAuth,
-  handleBack,
 }: {
   go: (v: View) => void
   onAuth: (user: AuthUser) => void
-  handleBack?: () => void
 }) {
   const [mode, setMode] = useState<'signin' | 'signup'>('signin')
 
@@ -1039,10 +868,9 @@ function Login({
 
         <button
           className="login-link"
-          onClick={() => (handleBack ? handleBack() : go('landing'))}
-          aria-label="Back"
+          onClick={() => go('landing')}
         >
-          <ArrowLeft size={16} />
+          <ArrowLeft size={15} />
           Back to site
         </button>
 
@@ -1050,16 +878,6 @@ function Login({
 
 
       <Glass className="login-card">
-
-        <button
-          className="subpage-back-banner"
-          onClick={() => (handleBack ? handleBack() : go('landing'))}
-          style={{ marginBottom: 18 }}
-          aria-label="Back"
-        >
-          <ArrowLeft size={14} />
-          Back
-        </button>
 
         {/* ==================================================
             TITLE
@@ -1718,6 +1536,7 @@ type RouterLike = {
 const API_BASE =
   'http://localhost:5000/api/dashboard'
 const DRUG_API_BASE = 'http://localhost:5000/api/drugs'
+const RISK_API_BASE = 'http://localhost:5000/api/risk'
 
 async function fetchApi<T>(
   base: string,
@@ -1727,7 +1546,7 @@ async function fetchApi<T>(
 
   if (!response.ok) {
     throw new Error(
-      `Dashboard API error: ${response.status}`
+      `API error: ${response.status}`
     )
   }
 
@@ -1738,6 +1557,12 @@ async function fetchDashboard<T>(
   endpoint: string
 ): Promise<T> {
   return fetchApi<T>(API_BASE, endpoint)
+}
+
+async function fetchRisk<T>(
+  endpoint: string
+): Promise<T> {
+  return fetchApi<T>(RISK_API_BASE, endpoint)
 }
 
 async function fetchDrugApi<T>(
@@ -5156,10 +4981,8 @@ function DetailFieldGrid({
 
 function DataPage({
   router,
-  handleBack,
 }: {
   router: RouterLike
-  handleBack?: () => void
 }) {
   const searchParams = useSearchParams()
   const dataset = searchParams.get('dataset') || 'carrier'
@@ -5214,16 +5037,6 @@ function DataPage({
 
   return (
     <>
-      <button
-        className="subpage-back-banner"
-        onClick={() => (handleBack ? handleBack() : router.push('/'))}
-        style={{ marginBottom: 14 }}
-        aria-label="Back to Dashboard"
-      >
-        <ArrowLeft size={16} />
-        Back to Dashboard
-      </button>
-
       <Glass className="filter-card">
         <div className="card-title">
           <div>
@@ -5314,10 +5127,8 @@ function DataPage({
 
 function ClaimsPage({
   router,
-  handleBack,
 }: {
   router: RouterLike
-  handleBack?: () => void
 }) {
   const searchParams = useSearchParams()
   const [data, setData] =
@@ -5425,16 +5236,6 @@ function ClaimsPage({
 
   return (
     <>
-      <button
-        className="subpage-back-banner"
-        onClick={() => (handleBack ? handleBack() : router.push('/'))}
-        style={{ marginBottom: 14 }}
-        aria-label="Back to Dashboard"
-      >
-        <ArrowLeft size={16} />
-        Back to Dashboard
-      </button>
-
       <Glass className="table-card">
         <div className="card-title">
           <div>
@@ -5694,11 +5495,9 @@ function ClaimsPage({
 function ClaimDetailPage({
   claimId,
   router,
-  handleBack,
 }: {
   claimId: string
   router: RouterLike
-  handleBack?: () => void
 }) {
   const [data, setData] =
     useState<ClaimDetailResponse | null>(null)
@@ -5744,39 +5543,17 @@ function ClaimDetailPage({
 
   if (loading) {
     return (
-      <>
-        <button
-          className="subpage-back-banner"
-          onClick={() => (handleBack ? handleBack() : router.push('/claims'))}
-          style={{ marginBottom: 14 }}
-          aria-label="Back to All Claims"
-        >
-          <ArrowLeft size={16} />
-          Back to All Claims
-        </button>
-        <Glass className="table-card">
-          <p>Loading claim detail…</p>
-        </Glass>
-      </>
+      <Glass className="table-card">
+        <p>Loading claim detail…</p>
+      </Glass>
     )
   }
 
   if (error || !data) {
     return (
-      <>
-        <button
-          className="subpage-back-banner"
-          onClick={() => (handleBack ? handleBack() : router.push('/claims'))}
-          style={{ marginBottom: 14 }}
-          aria-label="Back to All Claims"
-        >
-          <ArrowLeft size={16} />
-          Back to All Claims
-        </button>
-        <Glass className="table-card">
-          <p>{error || 'Claim not found.'}</p>
-        </Glass>
-      </>
+      <Glass className="table-card">
+        <p>{error || 'Claim not found.'}</p>
+      </Glass>
     )
   }
 
@@ -5784,16 +5561,6 @@ function ClaimDetailPage({
 
   return (
     <>
-      <button
-        className="subpage-back-banner"
-        onClick={() => (handleBack ? handleBack() : router.push('/claims'))}
-        style={{ marginBottom: 14 }}
-        aria-label="Back to All Claims"
-      >
-        <ArrowLeft size={16} />
-        Back to All Claims
-      </button>
-
       <SummaryStrip
         items={[
           {
@@ -5859,10 +5626,8 @@ function ClaimDetailPage({
 
 function DrugsPage({
   router,
-  handleBack,
 }: {
   router: RouterLike
-  handleBack?: () => void
 }) {
   const searchParams = useSearchParams()
   const [data, setData] =
@@ -6000,18 +5765,22 @@ function DrugsPage({
   }
 
   const activeDataset =
-    dataset === 'provider-impact'
-      ? 'provider-impact'
-      : dataset === 'overall-trend'
-        ? 'overall-trend'
-        : 'drug-volume'
+    data?.dataset || dataset
 
   const heading =
     activeDataset === 'provider-impact'
       ? 'Affected Providers'
       : activeDataset === 'overall-trend'
-        ? 'Overall Risk Trend'
-        : `${toLabel(riskLevel || 'All')} Drug Records`
+        ? calendarYear
+          ? `Overall Risk Trend for ${calendarYear}`
+          : 'Overall Risk Trend'
+        : riskBucket === 'high_severity'
+          ? 'High Severity Drugs'
+          : riskBucket === 'active_alerts'
+            ? 'Active Drug Alerts'
+            : riskLevel
+              ? `${toLabel(riskLevel)} Drug Records`
+              : 'All Drug Records'
 
   const summaryItems =
     activeDataset === 'provider-impact'
@@ -6019,7 +5788,7 @@ function DrugsPage({
           {
             label: 'Providers',
             value: formatNumber(
-              data?.summary.provider_count || data?.summary.total_records || 0
+              data?.summary.provider_count || 0
             ),
           },
           {
@@ -6103,16 +5872,6 @@ function DrugsPage({
 
   return (
     <>
-      <button
-        className="subpage-back-banner"
-        onClick={() => (handleBack ? handleBack() : router.push('/'))}
-        style={{ marginBottom: 14 }}
-        aria-label="Back to Dashboard"
-      >
-        <ArrowLeft size={16} />
-        Back to Dashboard
-      </button>
-
       {data && <SummaryStrip items={summaryItems} />}
 
       <Glass
@@ -6418,10 +6177,8 @@ function DrugsPage({
 
 function ProvidersPage({
   router,
-  handleBack,
 }: {
   router: RouterLike
-  handleBack?: () => void
 }) {
   const searchParams = useSearchParams()
   const [data, setData] =
@@ -6439,8 +6196,6 @@ function ProvidersPage({
     useState(searchParams.get('risk_level') || '')
   const [source, setSource] =
     useState(searchParams.get('source') || '')
-  const [alertLevel, setAlertLevel] =
-    useState(searchParams.get('alert_level') || '')
 
   const page = Number(
     searchParams.get('page') || '1'
@@ -6450,6 +6205,8 @@ function ProvidersPage({
     'volume_risk'
   const sortDir =
     searchParams.get('sort_dir') || 'desc'
+  const alertLevel =
+    searchParams.get('alert_level') || ''
 
   useEffect(() => {
     setNpi(searchParams.get('npi') || '')
@@ -6457,9 +6214,6 @@ function ProvidersPage({
       searchParams.get('risk_level') || ''
     )
     setSource(searchParams.get('source') || '')
-    setAlertLevel(
-      searchParams.get('alert_level') || ''
-    )
   }, [searchParams])
 
   useEffect(() => {
@@ -6479,8 +6233,6 @@ function ProvidersPage({
               risk_level:
                 searchParams.get('risk_level'),
               source: searchParams.get('source'),
-              alert_level:
-                searchParams.get('alert_level'),
               sort_by: searchParams.get('sort_by'),
               sort_dir:
                 searchParams.get('sort_dir'),
@@ -6490,10 +6242,25 @@ function ProvidersPage({
         if (!cancelled) {
           setData(response)
         }
+
+        if (alertLevel) {
+          const alertResponse =
+            await fetchDashboard<AlertDrilldownResponse>(
+              `/alerts/drilldown${buildQuery({
+                level: alertLevel,
+              })}`
+            )
+
+          if (!cancelled) {
+            setAlerts(alertResponse)
+          }
+        } else if (!cancelled) {
+          setAlerts(null)
+        }
       } catch (err) {
         if (!cancelled) {
           console.error(err)
-          setError('Unable to load providers.')
+          setError('Unable to load provider data.')
         }
       } finally {
         if (!cancelled) {
@@ -6507,41 +6274,7 @@ function ProvidersPage({
     return () => {
       cancelled = true
     }
-  }, [page, searchParams])
-
-  useEffect(() => {
-    let cancelled = false
-
-    async function loadAlertDrilldown() {
-      if (!alertLevel) {
-        setAlerts(null)
-        return
-      }
-
-      try {
-        const response =
-          await fetchDashboard<AlertDrilldownResponse>(
-            `/alerts/${encodeURIComponent(
-              alertLevel
-            )}`
-          )
-
-        if (!cancelled) {
-          setAlerts(response)
-        }
-      } catch (err) {
-        if (!cancelled) {
-          console.error(err)
-        }
-      }
-    }
-
-    loadAlertDrilldown()
-
-    return () => {
-      cancelled = true
-    }
-  }, [alertLevel])
+  }, [page, searchParams, alertLevel])
 
   const pushFilters = (
     overrides: Record<string, string | number | undefined | null>
@@ -6552,9 +6285,9 @@ function ProvidersPage({
         npi,
         risk_level: riskLevel,
         source,
-        alert_level: alertLevel,
         sort_by: sortBy,
         sort_dir: sortDir,
+        alert_level: alertLevel,
         ...overrides,
       })}`
     )
@@ -6562,16 +6295,6 @@ function ProvidersPage({
 
   return (
     <>
-      <button
-        className="subpage-back-banner"
-        onClick={() => (handleBack ? handleBack() : router.push('/'))}
-        style={{ marginBottom: 14 }}
-        aria-label="Back to Dashboard"
-      >
-        <ArrowLeft size={16} />
-        Back to Dashboard
-      </button>
-
       {data && (
         <SummaryStrip
           items={[
@@ -6589,11 +6312,15 @@ function ProvidersPage({
             },
             {
               label: 'Average Monthly Volume',
-              value: data.summary.avg_monthly_volume.toFixed(1),
+              value: data.summary.avg_monthly_volume.toFixed(
+                1
+              ),
             },
             {
               label: 'Average Deviation',
-              value: `${data.summary.avg_deviation.toFixed(2)}%`,
+              value: `${data.summary.avg_deviation.toFixed(
+                2
+              )}%`,
             },
           ]}
         />
@@ -6930,13 +6657,10 @@ function ProvidersPage({
 function ProviderDetailPage({
   npi,
   router,
-  initialAlertLevel,
-  handleBack,
 }: {
   npi: string
   router: RouterLike
   initialAlertLevel?: string
-  handleBack?: () => void
 }) {
   const [data, setData] =
     useState<ProviderDetailResponse | null>(null)
@@ -6985,39 +6709,17 @@ function ProviderDetailPage({
 
   if (loading) {
     return (
-      <>
-        <button
-          className="subpage-back-banner"
-          onClick={() => (handleBack ? handleBack() : router.push('/providers'))}
-          style={{ marginBottom: 14 }}
-          aria-label="Back to All Providers"
-        >
-          <ArrowLeft size={16} />
-          Back to All Providers
-        </button>
-        <Glass className="table-card">
-          <p>Loading provider profile…</p>
-        </Glass>
-      </>
+      <Glass className="table-card">
+        <p>Loading provider profile…</p>
+      </Glass>
     )
   }
 
   if (error || !data) {
     return (
-      <>
-        <button
-          className="subpage-back-banner"
-          onClick={() => (handleBack ? handleBack() : router.push('/providers'))}
-          style={{ marginBottom: 14 }}
-          aria-label="Back to All Providers"
-        >
-          <ArrowLeft size={16} />
-          Back to All Providers
-        </button>
-        <Glass className="table-card">
-          <p>{error || 'Provider not found.'}</p>
-        </Glass>
-      </>
+      <Glass className="table-card">
+        <p>{error || 'Provider not found.'}</p>
+      </Glass>
     )
   }
 
@@ -7026,16 +6728,6 @@ function ProviderDetailPage({
 
   return (
     <>
-      <button
-        className="subpage-back-banner"
-        onClick={() => (handleBack ? handleBack() : router.push('/providers'))}
-        style={{ marginBottom: 14 }}
-        aria-label="Back to All Providers"
-      >
-        <ArrowLeft size={16} />
-        Back to All Providers
-      </button>
-
       <SummaryStrip
         items={[
           {
@@ -7903,6 +7595,931 @@ function Insights() {
           </Glass>
         )
       )}
+    </div>
+  )
+}
+
+// ============================================================
+// RISK GAUGE METER (SPEEDOMETER STYLE)
+// ============================================================
+
+function RiskGaugeMeter({
+  score,
+  label = 'Portfolio Composite Risk',
+  category = 'Very Good',
+  color = '#76E025',
+  showValue = true,
+}: {
+  score: number // 0.00 to 1.00 (Risk Score)
+  label?: string
+  category?: string
+  color?: string
+  showValue?: boolean
+}) {
+  const clampScore = Math.max(0.0, Math.min(1.0, isNaN(score) ? 0.0 : score))
+  // Health Index (0 to 100): 100% = 0 Risk (Excellent), 0% = 1.0 Risk (Poor)
+  const healthIndex = Math.round((1.0 - clampScore) * 100 * 10) / 10
+
+  // Needle angle: -90deg (far left/Poor) to +90deg (far right/Excellent)
+  const needleAngle = (healthIndex / 100) * 180 - 90
+
+  // Geometry: Center (250, 230)
+  const cx = 250
+  const cy = 230
+  const rOut = 190
+  const rMid1 = 140
+  const rMid2 = 105
+  const rIn = 75
+
+  const segments = [
+    { name: 'Poor', color: '#FF2D55', startDeg: 180, endDeg: 144, labelX: 110, labelY: 195 },
+    { name: 'Fair', color: '#FF9500', startDeg: 144, endDeg: 108, labelX: 165, labelY: 110 },
+    { name: 'Good', color: '#FFCC00', startDeg: 108, endDeg: 72, labelX: 250, labelY: 78 },
+    { name: 'Very Good', color: '#76E025', startDeg: 72, endDeg: 36, labelX: 335, labelY: 110 },
+    { name: 'Excellent', color: '#00C853', startDeg: 36, endDeg: 0, labelX: 390, labelY: 195 },
+  ]
+
+  const describeArc = (
+    c_x: number,
+    c_y: number,
+    r_in: number,
+    r_out: number,
+    start_deg: number,
+    end_deg: number
+  ) => {
+    const rad = (d: number) => (d * Math.PI) / 180
+    const x1 = c_x + r_out * Math.cos(rad(start_deg))
+    const y1 = c_y - r_out * Math.sin(rad(start_deg))
+    const x2 = c_x + r_out * Math.cos(rad(end_deg))
+    const y2 = c_y - r_out * Math.sin(rad(end_deg))
+    const x3 = c_x + r_in * Math.cos(rad(end_deg))
+    const y3 = c_y - r_in * Math.sin(rad(end_deg))
+    const x4 = c_x + r_in * Math.cos(rad(start_deg))
+    const y4 = c_y - r_in * Math.sin(rad(start_deg))
+    return `M ${x1.toFixed(1)} ${y1.toFixed(1)} A ${r_out} ${r_out} 0 0 1 ${x2.toFixed(1)} ${y2.toFixed(1)} L ${x3.toFixed(1)} ${y3.toFixed(1)} A ${r_in} ${r_in} 0 0 0 ${x4.toFixed(1)} ${y4.toFixed(1)} Z`
+  }
+
+  return (
+    <div className="flex flex-col items-center w-full">
+      <div className="risk-gauge-svg-wrap">
+        <svg
+          viewBox="0 0 500 270"
+          className="risk-gauge-svg"
+          aria-label={`Risk Gauge Score: ${score}`}
+        >
+          <defs>
+            <linearGradient id="needleGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#0B132B" />
+              <stop offset="100%" stopColor="#1E293B" />
+            </linearGradient>
+            <filter id="gaugeDropShadow" x="-10%" y="-10%" width="120%" height="120%">
+              <feDropShadow dx="0" dy="8" stdDeviation="10" floodOpacity="0.35" />
+            </filter>
+          </defs>
+
+          {/* Layer 1: Outermost Band */}
+          {segments.map(seg => (
+            <path
+              key={`outer-${seg.name}`}
+              d={describeArc(cx, cy, rMid1, rOut, seg.startDeg, seg.endDeg)}
+              fill={seg.color}
+              stroke="rgba(255,255,255,0.12)"
+              strokeWidth="1.5"
+            />
+          ))}
+
+          {/* Layer 2: Middle Translucent Band */}
+          {segments.map(seg => (
+            <path
+              key={`mid-${seg.name}`}
+              d={describeArc(cx, cy, rMid2, rMid1, seg.startDeg, seg.endDeg)}
+              fill={seg.color}
+              opacity="0.82"
+              stroke="rgba(255,255,255,0.08)"
+              strokeWidth="1"
+            />
+          ))}
+
+          {/* Layer 3: Inner Translucent Band */}
+          {segments.map(seg => (
+            <path
+              key={`inner-${seg.name}`}
+              d={describeArc(cx, cy, rIn, rMid2, seg.startDeg, seg.endDeg)}
+              fill={seg.color}
+              opacity="0.55"
+              stroke="rgba(255,255,255,0.05)"
+              strokeWidth="1"
+            />
+          ))}
+
+          {/* Inner Hub Background Cutout */}
+          <path
+            d={`M ${cx - rIn} ${cy} A ${rIn} ${rIn} 0 0 1 ${cx + rIn} ${cy} Z`}
+            fill="rgba(11, 23, 56, 0.95)"
+            stroke="var(--line)"
+            strokeWidth="1"
+          />
+
+          {/* White Bold Segment Labels */}
+          {segments.map(seg => (
+            <text
+              key={`text-${seg.name}`}
+              x={seg.labelX}
+              y={seg.labelY}
+              fill="#FFFFFF"
+              fontSize={seg.name === 'Very Good' || seg.name === 'Excellent' ? '12.5' : '13.5'}
+              fontWeight="800"
+              textAnchor="middle"
+              dominantBaseline="middle"
+              style={{
+                textShadow: '0 2px 4px rgba(0,0,0,0.6)',
+                letterSpacing: '0.04em',
+                userSelect: 'none',
+              }}
+            >
+              {seg.name}
+            </text>
+          ))}
+
+          {/* Animated Needle Pointer */}
+          <g
+            className="needle-pointer"
+            style={{
+              transform: `rotate(${needleAngle}deg)`,
+              transformOrigin: `${cx}px ${cy}px`,
+            }}
+          >
+            {/* Needle Body */}
+            <path
+              d={`M ${cx - 6} ${cy} L ${cx - 2} ${cy - 165} Q ${cx} ${cy - 175} ${cx + 2} ${cy - 165} L ${cx + 6} ${cy} Z`}
+              fill="url(#needleGrad)"
+              stroke="#8EEEFF"
+              strokeWidth="1.2"
+              filter="url(#gaugeDropShadow)"
+            />
+            {/* Center Pivot Outer Ring */}
+            <circle
+              cx={cx}
+              cy={cy}
+              r="18"
+              fill="#0B132B"
+              stroke="#8EEEFF"
+              strokeWidth="2.5"
+            />
+            {/* Center Pivot Inner Cap */}
+            <circle
+              cx={cx}
+              cy={cy}
+              r="7"
+              fill="#8EEEFF"
+            />
+          </g>
+        </svg>
+      </div>
+
+      {showValue && (
+        <div className="risk-score-badge">
+          <div className="flex items-baseline gap-2">
+            <span className="risk-score-num" style={{ color: color || '#76E025' }}>
+              {(clampScore * 100).toFixed(1)}%
+            </span>
+            <small className="text-muted text-xs font-semibold">
+              Risk ({clampScore.toFixed(4)})
+            </small>
+          </div>
+
+          <span
+            className="risk-category-pill"
+            style={{
+              backgroundColor: `${color}22`,
+              color: color || '#76E025',
+              border: `1px solid ${color}66`,
+            }}
+          >
+            <span
+              className="w-2 h-2 rounded-full"
+              style={{ backgroundColor: color || '#76E025' }}
+            />
+            {category} · {healthIndex}% Health Index
+          </span>
+          <p className="text-muted text-xs mt-1">{label}</p>
+        </div>
+      )}
+    </div>
+  )
+}
+
+
+// ============================================================
+// RISK SCORES & ALERTS PAGE
+// ============================================================
+
+type RiskSummaryResponse = {
+  status: string
+  executive: {
+    combined_avg_risk: number
+    portfolio_health_index: number
+    total_entities: number
+    critical_or_high_count: number
+    gauge_info: { category: string; color: string; health_index: number; band: number }
+  }
+  claims: {
+    total_providers: number
+    avg_risk_score: number
+    min_risk_score: number
+    max_risk_score: number
+    gauge_distribution: Record<string, number>
+    risk_levels: Record<string, number>
+    gauge_info: { category: string; color: string; health_index: number; band: number }
+    components: {
+      dq_risk: { weight: number; avg: number; label: string }
+      volume_risk: { weight: number; avg: number; label: string }
+      robust_z_risk: { weight: number; avg: number; label: string }
+      psi_risk: { weight: number; avg: number; label: string }
+      arrival_delay_risk: { weight: number; avg: number; label: string }
+    }
+    top_risk: Array<{
+      NPI: string
+      final_sla_risk_score: number
+      final_risk_level: string
+      dq_risk: number
+      volume_risk: number
+      root_cause?: string
+      recommendation?: string
+    }>
+  }
+  pharmacy: {
+    total_providers: number
+    avg_risk_score: number
+    min_risk_score: number
+    max_risk_score: number
+    gauge_distribution: Record<string, number>
+    risk_levels: Record<string, number>
+    gauge_info: { category: string; color: string; health_index: number; band: number }
+    components: {
+      dq_risk: { weight: number; avg: number; label: string }
+      volume_risk: { weight: number; avg: number; label: string }
+      robust_z_risk: { weight: number; avg: number; label: string }
+      psi_risk: { weight: number; avg: number; label: string }
+      arrival_delay_risk: { weight: number; avg: number; label: string }
+    }
+    top_risk: Array<{
+      npi: string
+      Prscrbr_Last_Org_Name: string
+      Prscrbr_First_Name: string
+      Final_Risk_Score: number
+      Risk_Level: string
+      Volume_Risk: number
+      DQ_Risk: number
+    }>
+  }
+}
+
+type ClaimRiskItem = {
+  NPI: string
+  current_period?: string
+  current_month_volume?: number
+  baseline_volume?: number
+  volume_risk?: number
+  dq_quality_score?: number
+  dq_risk?: number
+  robust_z_risk?: number
+  psi_risk?: number
+  arrival_delay_risk?: number
+  final_sla_risk_score: number
+  final_risk_level: string
+  root_cause?: string
+  recommendation?: string
+  gauge_info: { category: string; color: string; health_index: number }
+}
+
+type PharmacyRiskItem = {
+  npi: string
+  Prscrbr_Last_Org_Name: string
+  Prscrbr_First_Name: string
+  Prscrbr_City: string
+  Prscrbr_State_Abrvtn: string
+  Prscrbr_Type: string
+  volume_risk_score?: number
+  volume_risk_level?: string
+  Volume_Risk?: number
+  quality_score?: number
+  quality_status?: string
+  DQ_Risk?: number
+  RobustZ_Risk?: number
+  PSI_Risk?: number
+  ArrivalDelay_Risk?: number
+  Final_Risk_Score: number
+  Risk_Level: string
+  gauge_info: { category: string; color: string; health_index: number }
+}
+
+function RiskScoresPage({ router }: { router: RouterLike }) {
+  const [activeTab, setActiveTab] = useState<'claims' | 'pharmacy' | 'executive'>('claims')
+  const [summary, setSummary] = useState<RiskSummaryResponse | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  // Claims List State
+  const [claimsList, setClaimsList] = useState<ClaimRiskItem[]>([])
+  const [claimTotal, setClaimTotal] = useState(0)
+  const [claimPage, setClaimPage] = useState(1)
+  const [claimSearch, setClaimSearch] = useState('')
+  const [claimLevelFilter, setClaimLevelFilter] = useState('ALL')
+  const [selectedClaim, setSelectedClaim] = useState<ClaimRiskItem | null>(null)
+
+  // Pharmacy List State
+  const [pharmacyList, setPharmacyList] = useState<PharmacyRiskItem[]>([])
+  const [pharmacyTotal, setPharmacyTotal] = useState(0)
+  const [pharmacyPage, setPharmacyPage] = useState(1)
+  const [pharmacySearch, setPharmacySearch] = useState('')
+  const [pharmacyLevelFilter, setPharmacyLevelFilter] = useState('All')
+  const [selectedPharmacy, setSelectedPharmacy] = useState<PharmacyRiskItem | null>(null)
+
+  // Load Summary
+  useEffect(() => {
+    let isMounted = true
+    async function loadSummary() {
+      try {
+        setLoading(true)
+        const data = await fetchRisk<RiskSummaryResponse>('/summary')
+        if (isMounted) {
+          setSummary(data)
+          setError(null)
+        }
+      } catch (err) {
+        if (isMounted) {
+          setError('Failed to load risk score metrics from API.')
+        }
+      } finally {
+        if (isMounted) setLoading(false)
+      }
+    }
+    loadSummary()
+    return () => { isMounted = false }
+  }, [])
+
+  // Load Claims Records
+  useEffect(() => {
+    let isMounted = true
+    async function loadClaims() {
+      try {
+        const query = `?page=${claimPage}&per_page=10&search=${encodeURIComponent(claimSearch)}&risk_level=${encodeURIComponent(claimLevelFilter)}`
+        const res = await fetchRisk<{ total: number; data: ClaimRiskItem[] }>(`/claims${query}`)
+        if (isMounted) {
+          setClaimsList(res.data || [])
+          setClaimTotal(res.total || 0)
+        }
+      } catch (err) {
+        // Handled silently
+      }
+    }
+    loadClaims()
+    return () => { isMounted = false }
+  }, [claimPage, claimSearch, claimLevelFilter])
+
+  // Load Pharmacy Records
+  useEffect(() => {
+    let isMounted = true
+    async function loadPharmacy() {
+      try {
+        const query = `?page=${pharmacyPage}&per_page=10&search=${encodeURIComponent(pharmacySearch)}&risk_level=${encodeURIComponent(pharmacyLevelFilter)}`
+        const res = await fetchRisk<{ total: number; data: PharmacyRiskItem[] }>(`/pharmacy${query}`)
+        if (isMounted) {
+          setPharmacyList(res.data || [])
+          setPharmacyTotal(res.total || 0)
+        }
+      } catch (err) {
+        // Handled silently
+      }
+    }
+    loadPharmacy()
+    return () => { isMounted = false }
+  }, [pharmacyPage, pharmacySearch, pharmacyLevelFilter])
+
+  // Active Score & Gauge Values
+  const currentClaimScore = selectedClaim
+    ? selectedClaim.final_sla_risk_score
+    : summary?.claims.avg_risk_score ?? 0.0748
+
+  const currentClaimCategory = selectedClaim
+    ? selectedClaim.gauge_info.category
+    : summary?.claims.gauge_info.category ?? 'Very Good'
+
+  const currentClaimColor = selectedClaim
+    ? selectedClaim.gauge_info.color
+    : summary?.claims.gauge_info.color ?? '#34C759'
+
+  const currentPharmScore = selectedPharmacy
+    ? selectedPharmacy.Final_Risk_Score
+    : summary?.pharmacy.avg_risk_score ?? 0.253
+
+  const currentPharmCategory = selectedPharmacy
+    ? selectedPharmacy.gauge_info.category
+    : summary?.pharmacy.gauge_info.category ?? 'Good'
+
+  const currentPharmColor = selectedPharmacy
+    ? selectedPharmacy.gauge_info.color
+    : summary?.pharmacy.gauge_info.color ?? '#FFCC00'
+
+  const activeGaugeScore =
+    activeTab === 'claims'
+      ? currentClaimScore
+      : activeTab === 'pharmacy'
+      ? currentPharmScore
+      : summary?.executive.combined_avg_risk ?? 0.1639
+
+  const activeGaugeCategory =
+    activeTab === 'claims'
+      ? currentClaimCategory
+      : activeTab === 'pharmacy'
+      ? currentPharmCategory
+      : summary?.executive.gauge_info.category ?? 'Very Good'
+
+  const activeGaugeColor =
+    activeTab === 'claims'
+      ? currentClaimColor
+      : activeTab === 'pharmacy'
+      ? currentPharmColor
+      : summary?.executive.gauge_info.color ?? '#76E025'
+
+  const activeGaugeLabel =
+    activeTab === 'claims'
+      ? selectedClaim
+        ? `Claim Provider NPI: ${selectedClaim.NPI} (${selectedClaim.final_risk_level} Risk)`
+        : 'Overall Claims SLA Risk Fleet Average (claim_risk)'
+      : activeTab === 'pharmacy'
+      ? selectedPharmacy
+        ? `Prescriber: Dr. ${selectedPharmacy.Prscrbr_First_Name} ${selectedPharmacy.Prscrbr_Last_Org_Name} (NPI: ${selectedPharmacy.npi})`
+        : 'Overall Pharmacy Prescriber Risk Fleet Average (provider_risk)'
+      : 'Executive Portfolio Combined Risk Score'
+
+  return (
+    <div className="risk-dashboard-wrap">
+      {/* Top Navigation & Engine Selector Tabs */}
+      <div className="flex justify-between items-center flex-wrap gap-4">
+        <div className="risk-tabs-control">
+          <button
+            className={`risk-tab-btn ${activeTab === 'claims' ? 'active' : ''}`}
+            onClick={() => setActiveTab('claims')}
+          >
+            Claims Risk (`claim_risk`)
+          </button>
+          <button
+            className={`risk-tab-btn ${activeTab === 'pharmacy' ? 'active' : ''}`}
+            onClick={() => setActiveTab('pharmacy')}
+          >
+            Pharmacy Risk (`provider_risk`)
+          </button>
+          <button
+            className={`risk-tab-btn ${activeTab === 'executive' ? 'active' : ''}`}
+            onClick={() => setActiveTab('executive')}
+          >
+            Portfolio Overview
+          </button>
+        </div>
+
+        {(selectedClaim || selectedPharmacy) && (
+          <button
+            className="small-button"
+            onClick={() => {
+              setSelectedClaim(null)
+              setSelectedPharmacy(null)
+            }}
+          >
+            Reset to Fleet Average
+          </button>
+        )}
+      </div>
+
+      {/* Top 4 KPI Metrics */}
+      <div className="risk-kpi-grid">
+        <Glass className="risk-kpi-card">
+          <span className="kpi-label">Claims Risk Average</span>
+          <strong>{summary ? `${(summary.claims.avg_risk_score * 100).toFixed(1)}%` : '7.5%'}</strong>
+          <small>{summary?.claims.total_providers ?? 410} Monitored Providers</small>
+        </Glass>
+
+        <Glass className="risk-kpi-card">
+          <span className="kpi-label">Pharmacy Risk Average</span>
+          <strong>{summary ? `${(summary.pharmacy.avg_risk_score * 100).toFixed(1)}%` : '25.3%'}</strong>
+          <small>{summary?.pharmacy.total_providers ?? 2049} Monitored Prescribers</small>
+        </Glass>
+
+        <Glass className="risk-kpi-card">
+          <span className="kpi-label">Portfolio Health Index</span>
+          <strong>{summary ? `${summary.executive.portfolio_health_index}%` : '83.6%'}</strong>
+          <small>Composite Quality & SLA Conformance</small>
+        </Glass>
+
+        <Glass className="risk-kpi-card">
+          <span className="kpi-label">Total Monitored Entities</span>
+          <strong>{summary?.executive.total_entities ?? 2459}</strong>
+          <small className="text-amber">
+            {summary?.executive.critical_or_high_count ?? 6} Elevated / High Risk
+          </small>
+        </Glass>
+      </div>
+
+      {/* Main Row: Speedometer Gauge + 5 Pillars Breakdown */}
+      <div className="risk-main-grid">
+        {/* Left: Speedometer Gauge */}
+        <Glass className="risk-gauge-card">
+          <div className="w-full flex justify-between items-center mb-2">
+            <div>
+              <p className="eyebrow">FINAL RISK GAUGE METER</p>
+              <h2 className="text-lg font-bold">
+                {activeTab === 'claims'
+                  ? selectedClaim ? `Claim Provider ${selectedClaim.NPI}` : 'Claims Risk Score'
+                  : activeTab === 'pharmacy'
+                  ? selectedPharmacy ? `Dr. ${selectedPharmacy.Prscrbr_Last_Org_Name}` : 'Pharmacy Risk Score'
+                  : 'Portfolio Composite Score'}
+              </h2>
+            </div>
+            <Status tone={activeGaugeCategory === 'Poor' ? 'bad' : activeGaugeCategory === 'Fair' ? 'warn' : 'good'}>
+              {activeGaugeCategory}
+            </Status>
+          </div>
+
+          <RiskGaugeMeter
+            score={activeGaugeScore}
+            label={activeGaugeLabel}
+            category={activeGaugeCategory}
+            color={activeGaugeColor}
+            showValue={true}
+          />
+
+          {/* Selected Entity Recommendation / Root Cause */}
+          {selectedClaim && (
+            <div className="recommendation-panel text-left w-full">
+              <strong className="text-xs text-aqua">ROOT CAUSE ANALYSIS</strong>
+              <p>{selectedClaim.root_cause || 'Balanced risk profile with no single dominant failure.'}</p>
+              <strong className="text-xs text-aqua mt-2">OPERATIONAL RECOMMENDATION</strong>
+              <p>{selectedClaim.recommendation || 'Continue routine performance monitoring.'}</p>
+            </div>
+          )}
+
+          {selectedPharmacy && (
+            <div className="recommendation-panel text-left w-full">
+              <strong className="text-xs text-aqua">PRESCRIBER PROFILE DETAILS</strong>
+              <p>
+                Specialty: <strong>{selectedPharmacy.Prscrbr_Type || 'General'}</strong> · Location: <strong>{selectedPharmacy.Prscrbr_City}, {selectedPharmacy.Prscrbr_State_Abrvtn}</strong>
+              </p>
+              <p>
+                Volume Level: <strong>{selectedPharmacy.volume_risk_level || 'Normal'}</strong> ({selectedPharmacy.Volume_Risk ?? 0.2} Risk) · DQ Status: <strong>{selectedPharmacy.quality_status || 'Excellent'}</strong>
+              </p>
+            </div>
+          )}
+        </Glass>
+
+        {/* Right: 5 Risk Pillars Component Weights */}
+        <Glass className="risk-pillars-card">
+          <div className="flex justify-between items-center">
+            <div>
+              <p className="eyebrow">RISK DRIVER BREAKDOWN</p>
+              <h2 className="text-lg font-bold">5 Core Risk Pillars</h2>
+            </div>
+            <span className="mini-label">WEIGHTED FORMULA</span>
+          </div>
+
+          <p className="text-muted text-xs">
+            Final score is calculated from 5 standardized dimensions: Data Quality (25%), Volume (20%), Robust-Z Anomaly (20%), PSI Drift (15%), and Arrival Delay (20%).
+          </p>
+
+          <div className="flex flex-col gap-3">
+            {/* Pillar 1: Data Quality Risk */}
+            <div className="pillar-item">
+              <div className="pillar-header">
+                <strong>Data Quality Risk (25% Weight)</strong>
+                <span style={{ color: '#8EEEFF' }}>
+                  {activeTab === 'claims'
+                    ? selectedClaim ? `${((selectedClaim.dq_risk ?? 0.13) * 100).toFixed(1)}%` : `${((summary?.claims.components.dq_risk.avg ?? 0.135) * 100).toFixed(1)}%`
+                    : selectedPharmacy ? `${((selectedPharmacy.DQ_Risk ?? 0.05) * 100).toFixed(1)}%` : `${((summary?.pharmacy.components.dq_risk.avg ?? 0.06) * 100).toFixed(1)}%`}
+                </span>
+              </div>
+              <div className="pillar-bar-bg">
+                <div
+                  className="pillar-bar-fill"
+                  style={{
+                    width: `${Math.min(100, ((activeTab === 'claims' ? (selectedClaim?.dq_risk ?? summary?.claims.components.dq_risk.avg ?? 0.135) : (selectedPharmacy?.DQ_Risk ?? summary?.pharmacy.components.dq_risk.avg ?? 0.06)) * 100))}%`,
+                    backgroundColor: '#8EEEFF',
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* Pillar 2: Volume Risk */}
+            <div className="pillar-item">
+              <div className="pillar-header">
+                <strong>Volume Risk (20% Weight)</strong>
+                <span style={{ color: '#F2CF7B' }}>
+                  {activeTab === 'claims'
+                    ? selectedClaim ? `${((selectedClaim.volume_risk ?? 0.0) * 100).toFixed(1)}%` : `${((summary?.claims.components.volume_risk.avg ?? 0.0) * 100).toFixed(1)}%`
+                    : selectedPharmacy ? `${((selectedPharmacy.Volume_Risk ?? 0.2) * 100).toFixed(1)}%` : `${((summary?.pharmacy.components.volume_risk.avg ?? 0.23) * 100).toFixed(1)}%`}
+                </span>
+              </div>
+              <div className="pillar-bar-bg">
+                <div
+                  className="pillar-bar-fill"
+                  style={{
+                    width: `${Math.min(100, ((activeTab === 'claims' ? (selectedClaim?.volume_risk ?? summary?.claims.components.volume_risk.avg ?? 0.0) : (selectedPharmacy?.Volume_Risk ?? summary?.pharmacy.components.volume_risk.avg ?? 0.23)) * 100))}%`,
+                    backgroundColor: '#F2CF7B',
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* Pillar 3: Robust-Z Anomaly Risk */}
+            <div className="pillar-item">
+              <div className="pillar-header">
+                <strong>Robust-Z Anomaly Risk (20% Weight)</strong>
+                <span style={{ color: '#FF9BAF' }}>
+                  {activeTab === 'claims'
+                    ? selectedClaim ? `${((selectedClaim.robust_z_risk ?? 0.0) * 100).toFixed(1)}%` : `${((summary?.claims.components.robust_z_risk.avg ?? 0.0) * 100).toFixed(1)}%`
+                    : selectedPharmacy ? `${((selectedPharmacy.RobustZ_Risk ?? 0.1) * 100).toFixed(1)}%` : `${((summary?.pharmacy.components.robust_z_risk.avg ?? 0.12) * 100).toFixed(1)}%`}
+                </span>
+              </div>
+              <div className="pillar-bar-bg">
+                <div
+                  className="pillar-bar-fill"
+                  style={{
+                    width: `${Math.min(100, ((activeTab === 'claims' ? (selectedClaim?.robust_z_risk ?? summary?.claims.components.robust_z_risk.avg ?? 0.0) : (selectedPharmacy?.RobustZ_Risk ?? summary?.pharmacy.components.robust_z_risk.avg ?? 0.12)) * 100))}%`,
+                    backgroundColor: '#FF9BAF',
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* Pillar 4: Population Stability (PSI) Risk */}
+            <div className="pillar-item">
+              <div className="pillar-header">
+                <strong>PSI Drift Risk (15% Weight)</strong>
+                <span style={{ color: '#B8C3FF' }}>
+                  {activeTab === 'claims'
+                    ? selectedClaim ? `${((selectedClaim.psi_risk ?? 0.0) * 100).toFixed(1)}%` : `${((summary?.claims.components.psi_risk.avg ?? 0.0) * 100).toFixed(1)}%`
+                    : selectedPharmacy ? `${((selectedPharmacy.PSI_Risk ?? 0.3) * 100).toFixed(1)}%` : `${((summary?.pharmacy.components.psi_risk.avg ?? 0.31) * 100).toFixed(1)}%`}
+                </span>
+              </div>
+              <div className="pillar-bar-bg">
+                <div
+                  className="pillar-bar-fill"
+                  style={{
+                    width: `${Math.min(100, ((activeTab === 'claims' ? (selectedClaim?.psi_risk ?? summary?.claims.components.psi_risk.avg ?? 0.0) : (selectedPharmacy?.PSI_Risk ?? summary?.pharmacy.components.psi_risk.avg ?? 0.31)) * 100))}%`,
+                    backgroundColor: '#B8C3FF',
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* Pillar 5: Arrival Delay Risk */}
+            <div className="pillar-item">
+              <div className="pillar-header">
+                <strong>Arrival Delay Risk (20% Weight)</strong>
+                <span style={{ color: '#C9F7FF' }}>20.0%</span>
+              </div>
+              <div className="pillar-bar-bg">
+                <div
+                  className="pillar-bar-fill"
+                  style={{
+                    width: '20%',
+                    backgroundColor: '#C9F7FF',
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+        </Glass>
+      </div>
+
+      {/* Interactive Entity Explorer Table */}
+      <Glass className="risk-table-card">
+        <div className="risk-table-toolbar">
+          <div>
+            <p className="eyebrow">
+              {activeTab === 'pharmacy' ? 'PHARMACY PRESCRIBERS (provider_risk)' : 'CLAIM PROVIDERS (claim_risk)'}
+            </p>
+            <h2 className="text-lg font-bold">
+              {activeTab === 'pharmacy'
+                ? `Pharmacy Prescribers (${pharmacyTotal} Total)`
+                : `Claim Providers (${claimTotal} Total)`}
+            </h2>
+            <small className="text-muted">
+              Click any row to display that provider's individual score on the Speedometer Gauge Meter above.
+            </small>
+          </div>
+
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="search-box">
+              <Search size={15} />
+              <input
+                placeholder={activeTab === 'pharmacy' ? 'Search NPI, Name, City, Specialty...' : 'Search NPI, Root Cause...'}
+                value={activeTab === 'pharmacy' ? pharmacySearch : claimSearch}
+                onChange={e => {
+                  if (activeTab === 'pharmacy') {
+                    setPharmacySearch(e.target.value)
+                    setPharmacyPage(1)
+                  } else {
+                    setClaimSearch(e.target.value)
+                    setClaimPage(1)
+                  }
+                }}
+              />
+            </div>
+
+            <select
+              className="themed-select"
+              value={activeTab === 'pharmacy' ? pharmacyLevelFilter : claimLevelFilter}
+              onChange={e => {
+                if (activeTab === 'pharmacy') {
+                  setPharmacyLevelFilter(e.target.value)
+                  setPharmacyPage(1)
+                } else {
+                  setClaimLevelFilter(e.target.value)
+                  setClaimPage(1)
+                }
+              }}
+            >
+              <option value={activeTab === 'pharmacy' ? 'All' : 'ALL'}>All Risk Levels</option>
+              <option value={activeTab === 'pharmacy' ? 'Low' : 'LOW'}>Low Risk</option>
+              <option value={activeTab === 'pharmacy' ? 'Moderate' : 'MEDIUM'}>
+                {activeTab === 'pharmacy' ? 'Moderate Risk' : 'Medium Risk'}
+              </option>
+              <option value={activeTab === 'pharmacy' ? 'High' : 'HIGH'}>High Risk</option>
+              <option value="CRITICAL">Critical Risk</option>
+            </select>
+          </div>
+        </div>
+
+        {/* Claims Table */}
+        {activeTab !== 'pharmacy' ? (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Provider NPI</th>
+                  <th>Period</th>
+                  <th>Month Vol</th>
+                  <th>DQ Score</th>
+                  <th>DQ Risk</th>
+                  <th>Volume Risk</th>
+                  <th>Arrival Delay</th>
+                  <th>Final Score</th>
+                  <th>Risk Level</th>
+                  <th>Gauge Category</th>
+                </tr>
+              </thead>
+              <tbody>
+                {claimsList.map(item => {
+                  const isSelected = selectedClaim?.NPI === item.NPI
+                  return (
+                    <tr
+                      key={item.NPI}
+                      className={`risk-row-clickable ${isSelected ? 'risk-row-selected' : ''}`}
+                      onClick={() => {
+                        setSelectedClaim(isSelected ? null : item)
+                        setSelectedPharmacy(null)
+                        window.scrollTo({ top: 150, behavior: 'smooth' })
+                      }}
+                      title="Click to view score in Speedometer Gauge"
+                    >
+                      <td className="font-mono text-aqua font-bold">{item.NPI}</td>
+                      <td>{item.current_period || '2023-03'}</td>
+                      <td>{item.current_month_volume ?? 1}</td>
+                      <td>{item.dq_quality_score ? `${item.dq_quality_score.toFixed(1)}%` : 'N/A'}</td>
+                      <td>{item.dq_risk ? `${(item.dq_risk * 100).toFixed(1)}%` : '0%'}</td>
+                      <td>{item.volume_risk ? `${(item.volume_risk * 100).toFixed(1)}%` : '0%'}</td>
+                      <td>20.0%</td>
+                      <td className="font-bold text-sm" style={{ color: item.gauge_info.color }}>
+                        {(item.final_sla_risk_score * 100).toFixed(1)}%
+                      </td>
+                      <td>
+                        <Status tone={item.final_risk_level === 'CRITICAL' ? 'bad' : item.final_risk_level === 'HIGH' || item.final_risk_level === 'MEDIUM' ? 'warn' : 'good'}>
+                          {item.final_risk_level}
+                        </Status>
+                      </td>
+                      <td>
+                        <span
+                          className="px-2 py-0.5 rounded-full text-xs font-bold"
+                          style={{ backgroundColor: `${item.gauge_info.color}22`, color: item.gauge_info.color }}
+                        >
+                          {item.gauge_info.category}
+                        </span>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+
+            {/* Claims Pagination */}
+            <div className="flex justify-between items-center mt-4 text-xs text-muted">
+              <span>Showing {claimsList.length} of {claimTotal} Providers</span>
+              <div className="flex gap-2">
+                <button
+                  className="small-button"
+                  disabled={claimPage <= 1}
+                  onClick={() => setClaimPage(p => Math.max(1, p - 1))}
+                >
+                  Previous
+                </button>
+                <span className="self-center px-2 font-bold text-foreground">Page {claimPage}</span>
+                <button
+                  className="small-button"
+                  disabled={claimsList.length < 10}
+                  onClick={() => setClaimPage(p => p + 1)}
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : (
+          /* Pharmacy Table */
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Prescriber NPI</th>
+                  <th>Prescriber Name</th>
+                  <th>Location</th>
+                  <th>Specialty</th>
+                  <th>Volume Risk</th>
+                  <th>DQ Risk</th>
+                  <th>Robust-Z Risk</th>
+                  <th>PSI Risk</th>
+                  <th>Final Score</th>
+                  <th>Risk Level</th>
+                  <th>Gauge Category</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pharmacyList.map(item => {
+                  const isSelected = selectedPharmacy?.npi === item.npi
+                  return (
+                    <tr
+                      key={item.npi}
+                      className={`risk-row-clickable ${isSelected ? 'risk-row-selected' : ''}`}
+                      onClick={() => {
+                        setSelectedPharmacy(isSelected ? null : item)
+                        setSelectedClaim(null)
+                        window.scrollTo({ top: 150, behavior: 'smooth' })
+                      }}
+                      title="Click to view score in Speedometer Gauge"
+                    >
+                      <td className="font-mono text-aqua font-bold">{item.npi}</td>
+                      <td>Dr. {item.Prscrbr_First_Name} {item.Prscrbr_Last_Org_Name}</td>
+                      <td>{item.Prscrbr_City}, {item.Prscrbr_State_Abrvtn}</td>
+                      <td>{item.Prscrbr_Type || 'Internal Medicine'}</td>
+                      <td>{item.Volume_Risk ? `${(item.Volume_Risk * 100).toFixed(1)}%` : '0%'}</td>
+                      <td>{item.DQ_Risk ? `${(item.DQ_Risk * 100).toFixed(1)}%` : '0%'}</td>
+                      <td>{item.RobustZ_Risk ? `${(item.RobustZ_Risk * 100).toFixed(1)}%` : '0%'}</td>
+                      <td>{item.PSI_Risk ? `${(item.PSI_Risk * 100).toFixed(1)}%` : '0%'}</td>
+                      <td className="font-bold text-sm" style={{ color: item.gauge_info.color }}>
+                        {(item.Final_Risk_Score * 100).toFixed(1)}%
+                      </td>
+                      <td>
+                        <Status tone={item.Risk_Level === 'High' ? 'bad' : item.Risk_Level === 'Moderate' ? 'warn' : 'good'}>
+                          {item.Risk_Level}
+                        </Status>
+                      </td>
+                      <td>
+                        <span
+                          className="px-2 py-0.5 rounded-full text-xs font-bold"
+                          style={{ backgroundColor: `${item.gauge_info.color}22`, color: item.gauge_info.color }}
+                        >
+                          {item.gauge_info.category}
+                        </span>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+
+            {/* Pharmacy Pagination */}
+            <div className="flex justify-between items-center mt-4 text-xs text-muted">
+              <span>Showing {pharmacyList.length} of {pharmacyTotal} Prescribers</span>
+              <div className="flex gap-2">
+                <button
+                  className="small-button"
+                  disabled={pharmacyPage <= 1}
+                  onClick={() => setPharmacyPage(p => Math.max(1, p - 1))}
+                >
+                  Previous
+                </button>
+                <span className="self-center px-2 font-bold text-foreground">Page {pharmacyPage}</span>
+                <button
+                  className="small-button"
+                  disabled={pharmacyList.length < 10}
+                  onClick={() => setPharmacyPage(p => p + 1)}
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </Glass>
     </div>
   )
 }

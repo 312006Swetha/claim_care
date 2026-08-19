@@ -1272,94 +1272,241 @@
 }
 
 /* ============================================================
-   UNIVERSAL BACK BUTTON STYLES
+   RISK SCORE & SPEEDOMETER GAUGE METER STYLING
    ============================================================ */
 
-.topbar-back-btn {
+.risk-dashboard-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.risk-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+}
+
+.risk-kpi-card {
+  padding: 18px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-radius: var(--radius);
+  position: relative;
+  overflow: hidden;
+}
+
+.risk-kpi-card .kpi-label {
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.risk-kpi-card strong {
+  font-size: 26px;
+  letter-spacing: -0.04em;
+}
+
+.risk-kpi-card small {
+  color: var(--aqua);
+  font-size: 11px;
+}
+
+.risk-main-grid {
+  display: grid;
+  grid-template-columns: 1.15fr 1fr;
+  gap: 16px;
+}
+
+.risk-gauge-card {
+  padding: 28px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  position: relative;
+}
+
+.risk-gauge-svg-wrap {
+  width: 100%;
+  max-width: 440px;
+  margin: 10px auto 0;
+  display: flex;
+  justify-content: center;
+  position: relative;
+}
+
+.risk-gauge-svg {
+  width: 100%;
+  height: auto;
+  overflow: visible;
+  filter: drop-shadow(0 12px 24px rgba(0, 0, 0, 0.35));
+}
+
+.needle-pointer {
+  transform-origin: 250px 230px;
+  transition: transform 0.85s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.risk-score-badge {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.risk-score-num {
+  font-size: 38px;
+  font-weight: 900;
+  letter-spacing: -0.05em;
+}
+
+.risk-category-pill {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 12px;
-  background: rgba(142, 238, 255, 0.12);
-  border: 1px solid rgba(142, 238, 255, 0.35);
-  color: var(--foreground);
-  border-radius: 10px;
+  padding: 6px 16px;
+  border-radius: 999px;
   font-size: 12px;
-  font-weight: 700;
-  cursor: pointer;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  margin-right: 4px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
-.topbar-back-btn:hover {
-  background: rgba(142, 238, 255, 0.24);
-  border-color: var(--aqua);
-  color: #ffffff;
-  transform: translateX(-2px);
-  box-shadow: 0 0 16px rgba(142, 238, 255, 0.25);
+.risk-pillars-card {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
-.topbar-back-btn svg {
-  transition: transform 0.2s ease;
-}
-
-.topbar-back-btn:hover svg {
-  transform: translateX(-3px);
-}
-
-.subpage-back-banner {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 14px;
-  background: rgba(18, 43, 108, 0.45);
+.pillar-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 14px;
+  background: rgba(0, 0, 0, 0.15);
   border: 1px solid var(--line);
-  color: var(--aqua);
-  border-radius: 10px;
+  border-radius: 14px;
+}
+
+.pillar-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+}
+
+.pillar-header strong {
+  font-weight: 700;
+}
+
+.pillar-header span {
+  font-weight: 800;
+}
+
+.pillar-bar-bg {
+  width: 100%;
+  height: 7px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 99px;
+  overflow: hidden;
+}
+
+.pillar-bar-fill {
+  height: 100%;
+  border-radius: 99px;
+  transition: width 0.6s ease;
+}
+
+.risk-table-card {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.risk-table-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.risk-tabs-control {
+  display: flex;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 3px;
+  gap: 4px;
+}
+
+.risk-tab-btn {
+  padding: 8px 18px;
+  border-radius: 999px;
+  border: 0;
+  background: none;
+  color: var(--muted);
   font-size: 12px;
   font-weight: 700;
   cursor: pointer;
   transition: all 0.2s ease;
-  backdrop-filter: blur(12px);
 }
 
-.subpage-back-banner:hover {
-  background: rgba(142, 238, 255, 0.18);
-  border-color: var(--aqua);
-  color: #ffffff;
-  transform: translateX(-3px);
-  box-shadow: 0 4px 18px rgba(3, 18, 74, 0.4);
+.risk-tab-btn.active {
+  background: var(--aqua);
+  color: #062427;
+  box-shadow: 0 4px 14px rgba(142, 238, 255, 0.35);
 }
 
-.subpage-back-banner svg {
-  transition: transform 0.2s ease;
+.risk-row-clickable {
+  cursor: pointer;
+  transition: background 0.15s ease;
 }
 
-.subpage-back-banner:hover svg {
-  transform: translateX(-3px);
+.risk-row-clickable:hover {
+  background: rgba(142, 238, 255, 0.08);
 }
 
-.heading-actions .back-btn,
-.heading-actions .small-button:has(svg) {
-  transition: all 0.2s ease;
-  font-weight: 700;
+.risk-row-selected {
+  background: rgba(142, 238, 255, 0.16) !important;
+  border-left: 3px solid var(--aqua);
 }
 
-.heading-actions .back-btn:hover,
-.heading-actions .small-button:has(svg):hover {
-  border-color: var(--aqua);
-  background: rgba(142, 238, 255, 0.18);
-  transform: translateX(-2px);
-  box-shadow: 0 0 14px rgba(142, 238, 255, 0.2);
+.recommendation-panel {
+  padding: 16px 20px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(142, 238, 255, 0.1), rgba(28, 45, 134, 0.3));
+  border: 1px solid var(--aqua);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
 }
 
-.heading-actions .back-btn svg,
-.heading-actions .small-button svg {
-  transition: transform 0.2s ease;
+.recommendation-panel p {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
 }
 
-.heading-actions .back-btn:hover svg,
-.heading-actions .small-button:hover svg {
-  transform: translateX(-2px);
+@media (max-width: 1024px) {
+  .risk-kpi-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .risk-main-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .risk-kpi-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
